@@ -11,10 +11,12 @@
  * sonraki asamalarda eklenecektir (bkz. docs/architecture.md).
  */
 #include "applist.h"
+#include "audio.h"
 #include "cgroup.h"
 #include "ipc.h"
 #include "log.h"
 #include "policy.h"
+#include "profile.h"
 #include "psi.h"
 #include "util.h"
 #include "zram.h"
@@ -36,12 +38,9 @@
 #define EV_MAX 16
 #define ZPERF_SOCK "/run/zperf.sock"
 
-/* Kademe siniflandirma esikleri (avg10 yuzdesi), oneriye gore.
- * Bunlar PSI tetikleyici esikleri DEGIL; uyandiktan sonra okunan avg10'a
- * uygulanan karar esikleridir. 6. haftadaki olcumlerle ayarlanacak. */
-#define TIER1_SOME_PCT 10.0   /* kademe 1: proaktif sikistirma */
-#define TIER2_SOME_PCT 25.0   /* kademe 2: dondur + sikistir     */
-#define TIER2_FULL_PCT  5.0
+/* Kademe siniflandirma esikleri artik gecerli PROFILDEN okunur (profile.h):
+ * uyandiktan sonra okunan avg10, profilin tier1/tier2 esikleriyle kiyaslanir.
+ * Esikler PSI tetikleyici esikleri DEGILdir; profille calisma zamani degisir. */
 
 /* --- Varsayilan ayarlar (onerideki kademelere yakin baslangic degerleri).
  * Esikler 6. haftadaki olcumlerle ayarlanacak. --- */
@@ -126,12 +125,13 @@ static int make_timer_fd(int period_sec)
     return fd;
 }
 
-/* avg10 degerlerine gore politika kademesini belirler (oneri Tablo). */
+/* avg10 degerlerine gore politika kademesini belirler (gecerli profilden). */
 static int classify_tier(double some, double full)
 {
-    if (some >= TIER2_SOME_PCT || full >= TIER2_FULL_PCT)
+    const profile_t *pf = profile_current();
+    if (some >= pf->tier2_some_pct || full >= pf->tier2_full_pct)
         return 2;
-    if (some >= TIER1_SOME_PCT)
+    if (some >= pf->tier1_some_pct)
         return 1;
     return 0;
 }
@@ -164,8 +164,10 @@ static void status_cb(char *buf, size_t len)
         some = psi_avg10(p, PSI_SOME);
         full = psi_avg10(p, PSI_FULL);
     }
-    snprintf(buf, len, "{\"some\":%.2f,\"full\":%.2f,\"focus\":\"%s\"}",
-             some, full, policy_focused());
+    snprintf(buf, len,
+             "{\"some\":%.2f,\"full\":%.2f,\"focus\":\"%s\","
+             "\"profile\":\"%s\",\"enabled\":%d}",
+             some, full, policy_focused(), profile_name(), policy_enabled());
 }
 
 static void cmd_cb(const char *cmd, const char *name, int value)
@@ -173,7 +175,23 @@ static void cmd_cb(const char *cmd, const char *name, int value)
     if (strcmp(cmd, "never_freeze") == 0) {
         applist_set_never_freeze(name, value);
         LOGI("Ayar: %s 'asla dondurma' = %d", name, value);
+    } else if (strcmp(cmd, "profile") == 0) {
+        if (profile_apply_named(name) == 0)
+            LOGI("Profil degisti: %s", profile_name());
+        else
+            LOGW("Bilinmeyen profil: %s", name);
+    } else if (strcmp(cmd, "enabled") == 0) {
+        policy_set_enabled(value);
     }
+}
+
+/* Politika olaylarini (dondu/cozuldu) bagli ajanlara yayinlar. */
+static void emit_event(const char *ev, const char *name)
+{
+    char b[160];
+    snprintf(b, sizeof(b), "{\"type\":\"event\",\"event\":\"%s\",\"name\":\"%s\"}",
+             ev, name);
+    ipc_broadcast(b);
 }
 
 int main(int argc, char **argv)
@@ -192,6 +210,10 @@ int main(int argc, char **argv)
     if (cgroup_init() != 0)
         LOGW("cgroup tabani hazirlanamadi; dondurma/geri kazanim calismayabilir.");
     policy_init();
+    profile_apply_named("Dengeli");       /* baslangic profili */
+    policy_set_event_cb(emit_event);      /* dondu/cozuldu -> ajanlara yayinla */
+    policy_set_audio_cb(audio_is_playing); /* ses calan uygulamayi kurban secme */
+    LOGI("Aktif profil: %s", profile_name());
 
     /* --- zram kurulumu --- */
     zram_dev_t zram = { .device_id = -1 };
@@ -278,6 +300,7 @@ int main(int argc, char **argv)
             } else if (fd == timfd) {
                 uint64_t exp;
                 if (read(timfd, &exp, sizeof(exp)) != sizeof(exp)) { /* yok */ }
+                policy_maintenance();   /* uzun donmus uygulamalari kisa sure coz */
                 int tier = report_pressure("Periyodik durum");
                 policy_on_tier(tier);
             } else if (ipc_owns_fd(fd)) {

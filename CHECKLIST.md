@@ -1,10 +1,12 @@
 # Pardus Z-Performans — Yapıldı / Yapılacak Listesi
 
-Son güncelleme: 2026-11-11 (Parça 6 eklendi)
+Son güncelleme: 2026-11-16 (profiller + bellek-duyarlı kurban + periyodik çözme +
+olay itme kanalı + arayüz grafiği/anahtarı + polkit + protokol dokümanı)
 C birim testleri: `sudo tests/run-unit-tests.sh` → **5 geçti, 0 kaldı**
 Python: 9 dosya söz dizimi OK + ajan↔servis entegrasyon testi PASS
-Test ortamı: WSL2 Ubuntu 24.04, Linux 6.18 (cgroup v2, PSI açık). Nihai doğrulama
-hedef sistemde (Pardus 25.0 XFCE) yapılacak.
+Test ortamı: WSL2 Ubuntu, Linux 6.18 (cgroup v2, PSI açık). **Proje artık bare-metal
+Pardus'a taşındı; nihai doğrulama Pardus 25.0 XFCE'de yapılacak** (Parça 7 ölçümleri
+ve X11/ses testleri orada).
 
 Durum anahtarı: `[x]` bitti ve test edildi · `[~]` kısmen · `[ ]` yapılmadı
 
@@ -95,20 +97,34 @@ Bu maddeler testlerle ortaya çıktı; öneride öngörülmemişti:
 
 ---
 
+### Parça 5+6 devreden ayarlar (2026-11-16 — WSL'de derlendi + 5/5 test PASS)
+- [x] `docs/ipc-protocol.md`: JSON mesaj şemasını belgele (tüm tipler + event itme)
+- [x] `polkit/org.pardus.zperf.policy` (allow_active=yes) — ayar komutları için yetki
+- [x] `config/profiles/*.conf` (Dengeli/Ofis/Akıllı Tahta) + `profile` IPC komutu
+      — `profile.c/h`: çalışma zamanı ayarlanabilir eşik/reclaim/çözme süresi;
+      gömülü varsayilan + varsa `/etc/zperf/profiles/<slug>.conf` ile override
+- [x] Bildirim itme kanalı: servis → ajan — `ipc_broadcast` + `{"type":"event"}`;
+      ajan `GLib.io_add_watch` ile okuyup masaüstü bildirimi gösterir
+- [x] Arayüzde aç/kapat anahtarı + canlı baskı grafiği (cairo sparkline);
+      profil seçimi "changed"→servise gönderiliyor; durum profil/enabled yansıtıyor
+- [x] Bellek-duyarlı kurban seçimi — `pick_victim` skoru = yaş×(bellek+taban);
+      bellek eşit/sıfırsa saf LRU'ya düşer (test_policy hâlâ PASS)
+- [x] Donmuş uygulamayı periyodik kısa süre çözme — `policy_maintenance`,
+      `frozen_at_ms` + profilin `thaw_max_frozen_sec`'i (durum timer'ında)
+- [~] Ses çalan uygulamayı dondurmadan atlama — `audio.c` (pactl sink-inputs,
+      corked hariç; best-effort, callback ile enjekte). **Pardus'ta doğrulanacak:**
+      zperfd root, kullanıcı PipeWire'ı için XDG_RUNTIME_DIR gerekebilir; kök PID
+      eşlemesi alt süreçte çalan sesi kaçırabilir. pactl yoksa 0 → zararsız.
+
 ## ⬜ Yapılacaklar
 
-### Parça 5'ten devreden ince ayarlar
-- [ ] Ses çalan uygulamaları dondurmadan atlama (PipeWire/PulseAudio sorgusu)
-- [ ] Donmuş uygulamayı periyodik kısa süre çözme (ağ/ses zaman aşımı yan etkisi)
-- [ ] Kurban seçiminde belleği de hesaba katma (şu an saf LRU)
-- [ ] `docs/ipc-protocol.md`: JSON mesaj şemasını belgele
-
-### Parça 6'dan kalan
-- [ ] `polkit/org.pardus.zperf.policy` (allow_active=yes) — ayar komutları için yetki
-- [ ] `config/profiles/*.conf` (Akıllı Tahta / Ofis / Dengeli) + profil komutu
-- [ ] Bildirim itme kanalı: servis → ajan (dondu/çözüldü olayları)
-- [ ] Arayüzde aç/kapat ve canlı grafik; profil seçimini servise gönderme
+### Pardus XFCE/X11'de çalıştırma (bare metal — yeni ortam)
 - [ ] Ajanı ve arayüzü gerçek Pardus XFCE/X11 oturumunda çalıştırıp doğrulama
+      (libwnck odak, GTK pencere, event→bildirim, profil/anahtar canlı)
+- [ ] `audio.c`'yi gerçek PipeWire ile doğrula (gerekirse kök yerine kullanıcı
+      oturumundan pactl / XDG_RUNTIME_DIR ayarı)
+- [ ] Event kanalı yeniden-bağlanma: ajan servise yeniden bağlanınca io-watch
+      bayatlıyor (bilinen sınır); kalıcı kanal için reconnect eklenebilir
 
 ### Parça 7 — Test düzeneği + ölçüm + paketleme (öneri 6–7. hafta)
 - [ ] `tests/prober/interaction_prober.c` (M1 takılma ölçeri)

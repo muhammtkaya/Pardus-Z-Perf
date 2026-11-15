@@ -17,6 +17,7 @@ typedef struct {
     char  name[APP_NAME_MAX];
     pid_t pid;             /* kok surec */
     long  last_focus_ms;   /* en son odak aldigi (veya biraktigi) an */
+    long  frozen_at_ms;    /* donduruldugu an (periyodik cozme icin) */
     int   frozen;          /* 1 = su an donmus */
     int   never_freeze;    /* 1 = "asla dondurma" listesinde */
     int   managed;         /* 1 = cgroup'a tasindi */

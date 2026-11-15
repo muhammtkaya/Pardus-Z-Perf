@@ -114,6 +114,14 @@ static void dispatch_line(client_t *c, char *line)
             json_int(line, "on", &on) && g_on_cmd) {
             g_on_cmd("never_freeze", name, (int)on);
         }
+    } else if (strcmp(type, "profile") == 0) {
+        char name[64] = {0};
+        if (json_str(line, "name", name, sizeof(name)) && g_on_cmd)
+            g_on_cmd("profile", name, 0);
+    } else if (strcmp(type, "enabled") == 0) {
+        long on = 1;
+        if (json_int(line, "on", &on) && g_on_cmd)
+            g_on_cmd("enabled", "", (int)on);
     }
 }
 
@@ -260,6 +268,23 @@ void ipc_handle_fd(int fd)
     client_t *c = client_slot(fd);
     if (c)
         client_readable(c);
+}
+
+void ipc_broadcast(const char *line)
+{
+    if (!line || !*line)
+        return;
+    char msg[CBUF_SIZE];
+    int n = snprintf(msg, sizeof(msg), "%s\n", line);
+    if (n <= 0)
+        return;
+    size_t len = (size_t)n < sizeof(msg) ? (size_t)n : sizeof(msg) - 1;
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (g_clients[i].fd < 0)
+            continue;
+        ssize_t w = write(g_clients[i].fd, msg, len);
+        (void)w;  /* bloklamayan en iyi caba; hatada istemci sonraki okumada duser */
+    }
 }
 
 void ipc_shutdown(void)
