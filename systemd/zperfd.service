@@ -2,7 +2,7 @@
 # zperfd - Pardus Z-Performans bellek yoneticisi (sistem servisi)
 [Unit]
 Description=Pardus Z-Performans bellek yoneticisi (zperfd)
-Documentation=https://example.invalid/pardus-zperf
+Documentation=https://github.com/muhammtkaya/Pardus-Z-Perf
 After=multi-user.target
 
 [Service]
@@ -13,8 +13,8 @@ Restart=on-failure
 RestartSec=2s
 # Cekirdek arayuzlerine (sysfs, swapon) eristigi icin root gerekir.
 User=root
-# Servis cokerse/kapanirsa cgroup'lar temizlenir; donmus uygulama kalmamali.
-# (cgroup temizligi sonraki asamada eklenecek.)
+# Servis cokerse/kapanirsa cgroup'lar temizlenir; donmus uygulama kalmaz
+# (cikista cgroup_cleanup_all tum uygulamalari cozer).
 
 [Install]
 WantedBy=multi-user.target

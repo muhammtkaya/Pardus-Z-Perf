@@ -1,7 +1,8 @@
 # Pardus Z-Performans — Yapıldı / Yapılacak Listesi
 
 Son güncelleme: 2026-11-16 (profiller + bellek-duyarlı kurban + periyodik çözme +
-olay itme kanalı + arayüz grafiği/anahtarı + polkit + protokol dokümanı)
+olay itme kanalı + arayüz grafiği/anahtarı + polkit + protokol dokümanı +
+Parça 7: prober/workload/measure/analyze + .deb paketleme)
 C birim testleri: `sudo tests/run-unit-tests.sh` → **5 geçti, 0 kaldı**
 Python: 9 dosya söz dizimi OK + ajan↔servis entegrasyon testi PASS
 Test ortamı: WSL2 Ubuntu, Linux 6.18 (cgroup v2, PSI açık). **Proje artık bare-metal
@@ -126,20 +127,30 @@ Bu maddeler testlerle ortaya çıktı; öneride öngörülmemişti:
 - [ ] Event kanalı yeniden-bağlanma: ajan servise yeniden bağlanınca io-watch
       bayatlıyor (bilinen sınır); kalıcı kanal için reconnect eklenebilir
 
-### Parça 7 — Test düzeneği + ölçüm + paketleme (öneri 6–7. hafta)
-- [ ] `tests/prober/interaction_prober.c` (M1 takılma ölçeri)
-- [ ] `tests/load/workload.sh` (video + LibreOffice + PDF + sekme yükü)
-- [ ] `tests/measure/*` (A/B/C/D koşumları, `vmstat`/`mm_stat`/PSI/dmesg toplama)
-- [ ] `tests/analysis/analyze.py` (M1–M6 + grafikler)
-- [ ] `packaging/debian/*` (.deb paketi)
+### Parça 7 — Test düzeneği + ölçüm + paketleme (2026-11-16 — yazıldı + WSL'de doğrulandı)
+- [x] `tests/prober/interaction_prober.c` (M1 takılma ölçeri) — derlendi+çalıştı;
+      CLOCK_MONOTONIC/TIMER_ABSTIME ile uyanma gecikmesi, CSV + p50/p95/p99/max özet
+- [x] `tests/load/workload.sh` — sentetik (stress-ng/python ayırıcı) + `--apps` (gerçek
+      Firefox/LibreOffice/Evince) kipleri; `bash -n` temiz
+- [x] `tests/measure/run.sh` — A/B/C/D senaryoları, collector (PSI/mem+pswpin/zram
+      mm_stat/zperfd CPU-RSS/dmesg-OOM), profil D için IPC ile set; `bash -n` temiz
+- [x] `tests/analysis/analyze.py` — M1–M6 hesap + tablo + matplotlib grafikleri
+      (PSI zaman serisi, M1 bar, CDF); sahte veriyle doğrulandı, py_compile OK
+- [x] `packaging/debian/*` (.deb) + `Makefile install`/`prober` hedefleri —
+      `make install DESTDIR=...` 16 dosyayı doğru yollara kurdu (pycache hariç)
 
-### Pardus'ta doğrulama (henüz yapılmadı — Pardus kurulu değil)
-- [ ] Pardus 25.0 XFCE'yi VirtualBox'a kur (2 GB RAM, 2 vCPU, CPU/disk limiti)
+> ⚠️ Parça 7 kodu yazıldı/derlendi ama **gerçek ölçüm Pardus'ta** yapılacak:
+> `sudo tests/measure/run.sh A|B|C|D` → `analyze.py data/*/ --out rapor/`.
+> M1–M6 tanımları dosya başlıklarında; nihai rapordaki ifadelerle uyumlanacak.
+
+### Pardus'ta doğrulama (bare metal — Pardus artık kurulu)
 - [ ] `make` ile derle, `sudo ./build/zperfd --debug` ile çalıştır
 - [ ] Pardus çekirdeğinde lz4/zstd algoritmalarını doğrula (öneride destekli deniyor)
 - [ ] Oturum cgroup'undan taşımanın systemd/logind ile çakışmadığını doğrula
       (risk maddesi; gerekirse D-Bus transient scope'a geç)
 - [ ] X11'de bir uygulamayı dondurmanın compositor'ı kilitlemediğini test et
+- [ ] `sudo tests/measure/run.sh` ile A/B/C/D ölçümlerini al, `analyze.py` ile M1–M6
+- [ ] `.deb` üret (`ln -sf packaging/debian debian && dpkg-buildpackage -us -uc -b`)
 
 ---
 
