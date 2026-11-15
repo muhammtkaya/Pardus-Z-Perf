@@ -35,6 +35,11 @@ int  ipc_owns_fd(int fd);
 /* ipc'ye ait bir fd'de epoll olayi oldugunda cagrilir. */
 void ipc_handle_fd(int fd);
 
+/* Tek satirlik bir mesaji bagli tum istemcilere yayinlar (servis -> ajan
+ * olay itme kanali). Satir sonuna '\n' eklenir. Bloklamayan yazimdir;
+ * tamponu dolu istemciye kismi/atlanmis gonderim normaldir. */
+void ipc_broadcast(const char *line);
+
 /* Soketleri kapatir ve dosyayi siler. */
 void ipc_shutdown(void);
 

@@ -31,7 +31,7 @@ run test_psi_parse "$ROOT/tests/unit/test_psi_parse.c" "$S/psi.c" "$S/util.c" "$
 run test_applist   "$ROOT/tests/unit/test_applist.c"   "$S/applist.c" "$S/util.c" "$S/log.c"
 run test_ipc       "$ROOT/tests/unit/test_ipc.c"       "$S/ipc.c" "$S/util.c" "$S/log.c"
 run test_cgroup    "$ROOT/tests/unit/test_cgroup.c"    "$S/cgroup.c" "$S/util.c" "$S/log.c"
-run test_policy    "$ROOT/tests/unit/test_policy.c"    "$S/policy.c" "$S/applist.c" "$S/cgroup.c" "$S/util.c" "$S/log.c"
+run test_policy    "$ROOT/tests/unit/test_policy.c"    "$S/policy.c" "$S/applist.c" "$S/cgroup.c" "$S/profile.c" "$S/util.c" "$S/log.c"
 
 echo "SONUC: $pass gecti, $fail kaldi, $skip atlandi"
 [ $fail -eq 0 ]

@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """zperfd ile satir tabanli JSON konusan Unix soket istemcisi.
 
-Protokol (zperfd/ipc.c ile birebir):
+Protokol (zperfd/ipc.c ile birebir; tam liste: docs/ipc-protocol.md):
   gonder: {"type":"focus","name":<ad>,"pid":<pid>}
   gonder: {"type":"never_freeze","name":<ad>,"on":0|1}
-  gonder: {"type":"status"} -> al: {"some":..,"full":..,"focus":".."}
+  gonder: {"type":"profile","name":<ad>}
+  gonder: {"type":"enabled","on":0|1}
+  gonder: {"type":"status"} -> al: {"some":..,"full":..,"focus":..,"profile":..,"enabled":..}
+  al (itme): {"type":"event","event":"frozen"|"thawed","name":<ad>}
 
 Saf standart kutuphane; GTK/Wnck gerektirmez, bu yuzden bagimsiz test edilebilir.
 """
@@ -40,6 +43,14 @@ class ZperfClient:
 
     def set_never_freeze(self, name, on):
         self._send({"type": "never_freeze", "name": name, "on": 1 if on else 0})
+
+    def set_profile(self, name):
+        """Calisma zamani profilini degistir (Dengeli/Ofis/Akilli Tahta)."""
+        self._send({"type": "profile", "name": name})
+
+    def set_enabled(self, on):
+        """Yonetimi ac/kapat (kapatinca donmus uygulamalar cozulur)."""
+        self._send({"type": "enabled", "on": 1 if on else 0})
 
     def get_status(self, timeout=2.0):
         self._send({"type": "status"})

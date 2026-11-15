@@ -1,8 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Masaustu bildirimleri (dondu/cozuldu). Grafik oturum gerektirir.
 
-Servis ileride dondurma/cozme olaylarini ajana iletince cagrilacaktir
-(su an iskelet; itme kanali sonraki asamada eklenecek).
+Servis, dondurma/cozme olaylarini /run/zperf.sock uzerinden ajana iter
+(bkz. docs/ipc-protocol.md "event"); FocusWatcher bu olaylari alip burayi
+cagirir. libnotify (gi Notify) yoksa sessizce False doner.
 """
 
 
