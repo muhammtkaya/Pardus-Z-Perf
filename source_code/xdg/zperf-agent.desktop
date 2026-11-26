@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Z-Performans Ajanı
+Comment=Odaktaki uygulamayı Z-Performans servisine bildirir
+Exec=/usr/bin/zperf-agent
+OnlyShowIn=XFCE;
+NoDisplay=true
+X-XFCE-Autostart-Override=true

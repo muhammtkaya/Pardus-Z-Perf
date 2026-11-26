@@ -1,0 +1,5 @@
+#!/bin/sh
+set -e
+# Kaldırma veya yükseltme öncesi servisi durdurur; ExecStopPost tüm grupları çözer.
+systemctl disable --now zperfd.service || true
+exit 0

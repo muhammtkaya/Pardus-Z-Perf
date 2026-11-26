@@ -1,0 +1,129 @@
+#!/usr/bin/env python3
+"""zperf-gui: Z-Performans durum ekranı ve ayarları (GTK 3).
+
+Sorumlu: Melih. Gereksinimler: G-30 – G-33. Notlar: docs/06 bölüm 9.
+
+Hazır olanlar: pencere düzeni, servise istek gönderme, saniyelik yenileme döngüsü.
+TODO olanlar: durumun ekrana yazılması, profil/aç-kapat/asla dondurma işlemleri.
+"""
+import json
+import socket
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+from gi.repository import GLib, Gtk  # noqa: E402
+
+SOCK = "/run/zperf.sock"
+PROFILES = [("dengeli", "Dengeli"), ("akilli-tahta", "Akıllı Tahta"), ("ofis", "Ofis")]
+LEVELS = {0: "Normal", 1: "Proaktif sıkıştırma", 2: "Dondur ve sıkıştır"}
+
+
+def request(msg: dict, timeout: float = 0.5) -> dict | None:
+    """Kısa bir bağlantıyla tek istek; servis yoksa None. Arayüz asla donmamalı."""
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(timeout)
+            s.connect(SOCK)
+            s.sendall((json.dumps(msg) + "\n").encode())
+            buf = b""
+            while not buf.endswith(b"\n"):
+                chunk = s.recv(65536)
+                if not chunk:
+                    break
+                buf += chunk
+        return json.loads(buf.decode())
+    except (OSError, ValueError):
+        return None
+
+
+class MainWindow(Gtk.Window):
+    def __init__(self) -> None:
+        super().__init__(title="Z-Performans")
+        self.set_default_size(640, 460)
+        self.set_border_width(12)
+        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        self.add(box)
+
+        # Uyarı çubuğu: servis çalışmıyor / yetki yok
+        self.banner = Gtk.Label(xalign=0)
+        box.pack_start(self.banner, False, False, 0)
+
+        # Durum ızgarası
+        grid = Gtk.Grid(column_spacing=16, row_spacing=4)
+        self.values: dict[str, Gtk.Label] = {}
+        for row, (key, title) in enumerate([("level", "Kademe"), ("psi", "Bellek baskısı (PSI)"),
+                                            ("mem", "RAM"), ("zram", "zram")]):
+            grid.attach(Gtk.Label(label=title, xalign=0), 0, row, 1, 1)
+            self.values[key] = Gtk.Label(label="—", xalign=0)
+            grid.attach(self.values[key], 1, row, 1, 1)
+        box.pack_start(grid, False, False, 0)
+
+        # Uygulama listesi: ad, bellek MB, takas MB, durum, asla dondurma
+        self.store = Gtk.ListStore(str, int, int, str, bool)
+        view = Gtk.TreeView(model=self.store)
+        for i, title in enumerate(["Uygulama", "Bellek (MB)", "Takas (MB)", "Durum"]):
+            view.append_column(Gtk.TreeViewColumn(title, Gtk.CellRendererText(), text=i))
+        toggle = Gtk.CellRendererToggle()
+        toggle.connect("toggled", self.on_never_freeze_toggled)
+        view.append_column(Gtk.TreeViewColumn("Asla dondurma", toggle, active=4))
+        scroll = Gtk.ScrolledWindow()
+        scroll.add(view)
+        box.pack_start(scroll, True, True, 0)
+
+        # Alt çubuk: profil ve politika anahtarı
+        bar = Gtk.Box(spacing=8)
+        bar.pack_start(Gtk.Label(label="Profil:"), False, False, 0)
+        self.profile = Gtk.ComboBoxText()
+        for pid, title in PROFILES:
+            self.profile.append(pid, title)
+        self.profile_handler = self.profile.connect("changed", self.on_profile_changed)
+        bar.pack_start(self.profile, False, False, 0)
+        bar.pack_end(Gtk.Label(label="Politika"), False, False, 0)
+        self.switch = Gtk.Switch()
+        self.switch_handler = self.switch.connect("notify::active", self.on_enabled_toggled)
+        bar.pack_end(self.switch, False, False, 0)
+        box.pack_start(bar, False, False, 0)
+
+        self.refresh()
+        GLib.timeout_add_seconds(1, self.refresh)
+
+    def refresh(self) -> bool:
+        st = request({"cmd": "status"})
+        if st is None:
+            self.banner.set_markup("<b>Servis çalışmıyor.</b> systemctl status zperfd")
+            return True
+        self.banner.set_text("")
+        # TODO(G-30): st["level"], st["psi"], st["mem"], st["zram"] alanlarını
+        # self.values etiketlerine yaz; self.store'u st["apps"] ile yeniden doldur
+        # (durum sütunu: "odakta" / "DONUK" / "ses"). Profil ve anahtarı güncellerken
+        # kendi sinyal işleyicilerimiz tetiklenmesin: handler_block / handler_unblock.
+        return True   # zamanlayıcı devam etsin
+
+    def on_profile_changed(self, combo: Gtk.ComboBoxText) -> None:
+        # TODO(G-31): {"cmd": "set_profile", "name": combo.get_active_id()}
+        # Yanıt "not authorized" ise anlaşılır bir mesaj göster. Algoritma farklı
+        # olan profile geçilirse "algoritma yeniden başlatmada değişir" uyarısı (TK-09).
+        pass
+
+    def on_enabled_toggled(self, switch: Gtk.Switch, _param) -> None:
+        # TODO(G-32): {"cmd": "set_enabled", "value": switch.get_active()}
+        pass
+
+    def on_never_freeze_toggled(self, _cell, path: str) -> None:
+        # TODO(G-33): {"cmd": "never_freeze", "app": self.store[path][0],
+        #              "value": not self.store[path][4]}
+        pass
+
+
+def main() -> int:
+    win = MainWindow()
+    win.connect("destroy", Gtk.main_quit)
+    win.show_all()
+    Gtk.main()
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

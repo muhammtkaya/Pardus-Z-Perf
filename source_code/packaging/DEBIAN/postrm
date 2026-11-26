@@ -1,0 +1,14 @@
+#!/bin/sh
+set -e
+# Sorumlu: Melih. Gereksinim: G-55 (geri alınabilirlik).
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    # TODO(G-55):
+    #  1. /var/lib/zperf/swappiness.orig varsa /proc/sys/vm/swappiness'e geri yaz.
+    #  2. zram takası varsa ve MemAvailable, zram'de kullanılan bellekten yeterince
+    #     büyükse swapoff + zram reset; değilse dokunma ve uyarı yaz (R-06).
+    systemctl daemon-reload || true
+fi
+if [ "$1" = "purge" ]; then
+    rm -rf /var/lib/zperf /etc/zperf
+fi
+exit 0

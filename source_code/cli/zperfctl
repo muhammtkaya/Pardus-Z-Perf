@@ -1,0 +1,97 @@
+#!/usr/bin/env python3
+"""zperfctl: zperfd için komut satırı istemcisi.
+
+Testlerde ve arayüze yedek olarak kullanılır (docs/03 kapsam daraltma 5).
+Örnekler:
+    zperfctl status
+    zperfctl status --json
+    zperfctl profile akilli-tahta
+    zperfctl enable | disable
+    zperfctl never-freeze vlc on
+    zperfctl raw '{"cmd":"hello","role":"gui","proto":1}'
+"""
+import argparse
+import json
+import socket
+import sys
+
+SOCK = "/run/zperf.sock"
+PROTO = 1
+
+
+def request(msg: dict, timeout: float = 2.0) -> dict:
+    """Tek bir komut gönderir ve tek satırlık yanıtı döndürür."""
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        s.connect(SOCK)
+        s.sendall((json.dumps(msg) + "\n").encode())
+        buf = b""
+        while not buf.endswith(b"\n"):
+            chunk = s.recv(65536)
+            if not chunk:
+                break
+            buf += chunk
+    return json.loads(buf.decode() or "{}")
+
+
+def print_status(st: dict) -> None:
+    psi = st.get("psi", {})
+    print(f"politika : {'açık' if st.get('enabled') else 'kapalı'}")
+    print(f"profil   : {st.get('profile')}")
+    print(f"kademe   : {st.get('level')}")
+    print(f"PSI      : some10={psi.get('some10', '?')}  full10={psi.get('full10', '?')}")
+    if "zram" in st:
+        z = st["zram"]
+        print(f"zram     : {z.get('orig_mb')} MB → {z.get('compr_mb')} MB ({z.get('algorithm')})")
+    apps = st.get("apps", [])
+    if apps:
+        print(f"\n{'uygulama':<20} {'bellek':>8} {'takas':>8}  durum")
+        for a in apps:
+            flags = [f for f, on in (("odakta", a.get("focused")), ("DONUK", a.get("frozen")),
+                                     ("ses", a.get("audio")), ("korunuyor", a.get("never_freeze"))) if on]
+            print(f"{a.get('app', '?'):<20} {a.get('mem_mb', 0):>6} MB {a.get('swap_mb', 0):>6} MB  "
+                  f"{', '.join(flags)}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(prog="zperfctl", description="Z-Performans komut satırı istemcisi")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    st = sub.add_parser("status", help="servisin durumu")
+    st.add_argument("--json", action="store_true", help="ham JSON yanıtı yazdır")
+    pr = sub.add_parser("profile", help="profili değiştir")
+    pr.add_argument("name", choices=["dengeli", "akilli-tahta", "ofis"])
+    sub.add_parser("enable", help="politikayı aç")
+    sub.add_parser("disable", help="politikayı kapat (tüm uygulamalar çözülür)")
+    nf = sub.add_parser("never-freeze", help="bir uygulamayı asla dondurma listesine ekle/çıkar")
+    nf.add_argument("app")
+    nf.add_argument("state", choices=["on", "off"])
+    raw = sub.add_parser("raw", help="ham JSON komutu gönder (test için)")
+    raw.add_argument("json")
+    args = ap.parse_args()
+
+    if args.cmd == "status":
+        msg = {"cmd": "status"}
+    elif args.cmd == "profile":
+        msg = {"cmd": "set_profile", "name": args.name}
+    elif args.cmd in ("enable", "disable"):
+        msg = {"cmd": "set_enabled", "value": args.cmd == "enable"}
+    elif args.cmd == "never-freeze":
+        msg = {"cmd": "never_freeze", "app": args.app, "value": args.state == "on"}
+    else:
+        msg = json.loads(args.json)
+
+    try:
+        resp = request(msg)
+    except (OSError, ValueError) as e:
+        print(f"zperfd'ye ulaşılamadı ({SOCK}): {e}", file=sys.stderr)
+        return 1
+
+    if args.cmd == "status" and not args.json and resp.get("ok"):
+        print_status(resp)
+    else:
+        print(json.dumps(resp, ensure_ascii=False, indent=2))
+    return 0 if resp.get("ok") else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

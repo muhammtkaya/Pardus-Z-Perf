@@ -1,0 +1,17 @@
+[Unit]
+Description=Z-Performans bellek baskısı yöneticisi
+Documentation=https://github.com/muhammtkaya/Pardus-Z-Perf
+
+[Service]
+Type=notify
+ExecStart=/usr/sbin/zperfd
+# Servis nasıl durursa dursun (çökme dahil) donuk uygulama kalmasın (G-08).
+ExecStopPost=/usr/libexec/zperf/zperf-thaw-all
+Restart=on-failure
+RestartSec=1
+# Bellek baskısı anında servisin kendisi öldürülmesin ve belleği geri kazanılmasın.
+OOMScoreAdjust=-900
+MemoryMin=16M
+
+[Install]
+WantedBy=multi-user.target

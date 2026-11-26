@@ -1,0 +1,141 @@
+#!/usr/bin/env python3
+"""zperf-agent: kullanıcı oturumunda çalışır, zperfd'ye pencere, odak ve ses bilgisi verir.
+
+Sorumlu: Melih. Gereksinimler: G-20 – G-25. Tasarım: docs/05 bölüm 3.2, 3.4 ve 6;
+örnek kod: docs/06 bölüm 8.
+
+Hazır olanlar: bağlantı, yeniden bağlanma, satır okuma/gönderme, ana döngü.
+TODO olanlar: pencere/odak/ses bildirimi ve masaüstü bildirimleri.
+"""
+import json
+import socket
+import sys
+
+import gi
+
+gi.require_version("Gtk", "3.0")
+gi.require_version("Wnck", "3.0")
+from gi.repository import GLib, Gtk, Wnck  # noqa: E402
+
+SOCK = "/run/zperf.sock"
+PROTO = 1
+RECONNECT_S = 2          # G-25
+AUDIO_POLL_S = 5         # G-23
+
+
+class Agent:
+    def __init__(self) -> None:
+        self.sock: socket.socket | None = None
+        self.rbuf = b""
+        self.reconnect_pending = False
+
+        self.screen = Wnck.Screen.get_default()
+        self.screen.force_update()
+        self.screen.connect("window-opened", self.on_window_opened)
+        self.screen.connect("window-closed", self.on_window_closed)
+        self.screen.connect("active-window-changed", self.on_focus_changed)
+        GLib.timeout_add_seconds(AUDIO_POLL_S, self.poll_audio)
+        self.connect()
+
+    # ---- bağlantı (hazır) ----
+
+    def connect(self) -> bool:
+        self.reconnect_pending = False
+        try:
+            s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            s.connect(SOCK)
+        except OSError:
+            self.schedule_reconnect()
+            return False
+        self.sock = s
+        self.rbuf = b""
+        GLib.io_add_watch(s.fileno(), GLib.IO_IN | GLib.IO_HUP | GLib.IO_ERR, self.on_readable)
+        self.send({"cmd": "hello", "role": "agent", "proto": PROTO})
+        self.send({"cmd": "subscribe"})
+        # Bağlanınca (yeniden bağlanma dahil) mevcut tüm pencereleri bildir (G-21, G-25).
+        for w in self.screen.get_windows():
+            self.on_window_opened(self.screen, w)
+        return False   # GLib zamanlayıcısı tekrar çağırmasın
+
+    def schedule_reconnect(self) -> None:
+        if self.sock:
+            self.sock.close()
+            self.sock = None
+        if not self.reconnect_pending:
+            self.reconnect_pending = True
+            GLib.timeout_add_seconds(RECONNECT_S, self.connect)
+
+    def send(self, msg: dict) -> None:
+        if not self.sock:
+            return
+        try:
+            self.sock.sendall((json.dumps(msg) + "\n").encode())
+        except OSError:
+            self.schedule_reconnect()
+
+    def on_readable(self, _fd, cond) -> bool:
+        if cond & (GLib.IO_HUP | GLib.IO_ERR):
+            self.schedule_reconnect()
+            return False
+        try:
+            data = self.sock.recv(65536) if self.sock else b""
+        except OSError:
+            data = b""
+        if not data:
+            self.schedule_reconnect()
+            return False
+        self.rbuf += data
+        while b"\n" in self.rbuf:
+            line, self.rbuf = self.rbuf.split(b"\n", 1)
+            try:
+                self.on_message(json.loads(line))
+            except ValueError:
+                print(f"zperf-agent: geçersiz satır: {line[:80]!r}", file=sys.stderr)
+        return True
+
+    # ---- TODO: projenin ajan tarafındaki asıl işi ----
+
+    def on_window_opened(self, _screen, window: Wnck.Window) -> None:
+        # TODO(G-21): Yalnızca normal pencereler (Wnck.WindowType.NORMAL) ve
+        # window.get_pid() > 0 olanlar. Gönder:
+        #   {"cmd": "window", "event": "opened", "pid": pid, "app": /proc/<pid>/comm}
+        # PID'i 0 olan pencereleri bir kez günlüğe yazın (B-13, R-08).
+        pass
+
+    def on_window_closed(self, _screen, window: Wnck.Window) -> None:
+        # TODO(G-21): {"cmd": "window", "event": "closed", "pid": ...}
+        pass
+
+    def on_focus_changed(self, screen: Wnck.Screen, _previous) -> None:
+        # TODO(G-22): screen.get_active_window() → pid > 0 ise
+        #   {"cmd": "focus", "pid": pid}
+        # Gecikme kritik (donmuş uygulama bununla çözülür): beklemeden gönderin.
+        pass
+
+    def poll_audio(self) -> bool:
+        # TODO(G-23, TK-08): `pactl -f json list sink-inputs` çıktısındaki
+        # properties["application.process.id"] değerlerini topla, gönder:
+        #   {"cmd": "audio", "pids": [...]}
+        # pactl yoksa veya hata verirse sessizce geç. Önce B-12 doğrulanmalı.
+        return True    # zamanlayıcı devam etsin
+
+    def on_message(self, msg: dict) -> None:
+        # Komut yanıtları ({"ok": ...}) ve olaylar ({"event": ...}) buraya gelir.
+        # TODO(G-24): "frozen" ve "thawed" olaylarında masaüstü bildirimi
+        # (gi Notify, yoksa `notify-send`). Bildirim ayarla kapatılabilir olmalı.
+        if not msg.get("ok", True):
+            print(f"zperf-agent: servis hatası: {msg.get('error')}", file=sys.stderr)
+
+
+def main() -> int:
+    Gtk.init(None)
+    Agent()
+    try:
+        GLib.MainLoop().run()
+    except KeyboardInterrupt:
+        pass
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

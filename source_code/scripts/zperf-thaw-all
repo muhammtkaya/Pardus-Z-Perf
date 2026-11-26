@@ -1,0 +1,11 @@
+#!/bin/sh
+# Tüm Z-Performans gruplarını çözer. zperfd.service içinde ExecStopPost olarak
+# çalışır; servis çökse bile donuk uygulama kalmaz (G-08). Hataları yok sayar.
+for u in $(systemctl list-units --type=scope --all --no-legend --plain 'zperf-*' | awk '{print $1}'); do
+    systemctl thaw "$u" 2>/dev/null || true
+done
+# TK-02 alternatifi (doğrudan cgroupfs) kullanılırsa:
+for f in /sys/fs/cgroup/zperf.slice/*/cgroup.freeze; do
+    [ -e "$f" ] && echo 0 > "$f"
+done
+exit 0

@@ -1,0 +1,9 @@
+#!/bin/sh
+set -e
+# Sorumlu: Melih. Paket kurulunca servisi etkinleştirip başlatır.
+if [ "$1" = "configure" ]; then
+    systemctl daemon-reload || true
+    systemctl enable --now zperfd.service || true
+    echo "Z-Performans kuruldu. Ajanın başlaması için oturumu kapatıp açın."
+fi
+exit 0

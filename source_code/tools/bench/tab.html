@@ -1,0 +1,45 @@
+<!doctype html>
+<!-- Bellek tüketen sentetik sekme (docs/07 bölüm 5.2).
+     Kullanım: file:///.../tab.html?mb=120
+     Belirtilen kadar bellek ayırır: yarısı rastgele (kötü sıkışır), yarısı tekrar
+     eden desen (iyi sıkışır). Saniyede bir belleğin %5'ine dokunur; böylece arka
+     planda "yaşayan" bir sekmeyi temsil eder. -->
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<title>zperf sekme</title>
+<style>body { font: 14px sans-serif; margin: 2em; }</style>
+</head>
+<body>
+<h1 id="h">zperf sentetik sekme</h1>
+<p id="s">hazırlanıyor…</p>
+<script>
+const mb = Math.max(1, parseInt(new URLSearchParams(location.search).get("mb") || "100", 10));
+const CHUNK = 1024 * 1024;
+const chunks = [];
+for (let i = 0; i < mb; i++) {
+  const a = new Uint8Array(CHUNK);
+  if (i % 2 === 0) {
+    // crypto.getRandomValues en fazla 65536 bayt doldurur
+    for (let off = 0; off < CHUNK; off += 65536) crypto.getRandomValues(a.subarray(off, off + 65536));
+  } else {
+    for (let j = 0; j < CHUNK; j++) a[j] = j & 0x3f;
+  }
+  chunks.push(a);
+}
+document.title = `zperf ${mb} MB`;
+document.getElementById("h").textContent = `zperf sentetik sekme: ${mb} MB`;
+let tick = 0, sum = 0;
+setInterval(() => {
+  // %5'ine dokun: her seferinde farklı parçalar, sayfa başına bir okuma/yazma
+  const n = Math.max(1, Math.floor(mb * 0.05));
+  for (let k = 0; k < n; k++) {
+    const a = chunks[(tick * n + k) % mb];
+    for (let j = 0; j < CHUNK; j += 4096) { sum += a[j]; a[j] ^= 1; }
+  }
+  tick++;
+  document.getElementById("s").textContent = `tur ${tick}, dokunulan ${n} MB/sn (${sum & 0xff})`;
+}, 1000);
+</script>
+</body>
+</html>

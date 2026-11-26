@@ -1,0 +1,11 @@
+Package: zperf
+Version: @VERSION@
+Section: admin
+Priority: optional
+Architecture: amd64
+Maintainer: Muhammed Furkan Kaya ve Melih Türker <TODO@ornek.edu.tr>
+Depends: libsystemd0, libjson-c5, python3, python3-gi, gir1.2-gtk-3.0, gir1.2-wnck-3.0, polkitd, pulseaudio-utils
+Description: Bellek baskısına uyarlanan bellek yöneticisi
+ PSI ile bellek baskısını izler; kullanıcının o an kullanmadığı uygulamaların
+ belleğini zram'e sıkıştırır, gerekirse onları dondurur ve kullanıcı geri
+ döndüğünde çözer. Hiçbir uygulamayı kapatmaz.

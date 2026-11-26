@@ -25,6 +25,7 @@ Bu klasör, Aşama 1 önerisinin teslim edilen son hali (`Pardus_Z_Performans_Pr
 | 12 | [Demo, video ve sözlü sunum](12_demo_video_ve_sunum.md) | 4 Aralık'tan itibaren; video senaryosu ve olası sorular | Ortak |
 | 13 | [README taslağı](13_README_taslagi.md) | Paketleme bitince doldurulur; teslimdeki `README.md` olur | Melih |
 | 14 | [Yapay zekâ kullanım kaydı](14_yapay_zeka_kullanim_kaydi.md) | Her kullanımda bir satır; rapordaki zorunlu bölümün kaynağı | Ortak |
+| 15 | [Kod iskeletinin durumu](15_iskelet_durumu.md) | Kodlamaya başlarken; hangi dosyada ne hazır, ne TODO, kimde | Ortak |
 
 Daha önce hazırlanan Çalışma Rehberi (`Z_Performans_Calisma_Rehberi.pdf`, depoda değil, proje klasöründe) terim sözlüğü ve elle yapılacak alıştırmalar için hâlâ geçerli.
 

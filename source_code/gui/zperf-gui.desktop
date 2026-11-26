@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Z-Performans
+Comment=Bellek baskısı yöneticisinin durumu ve ayarları
+Exec=/usr/bin/zperf-gui
+Icon=utilities-system-monitor
+Categories=System;Monitor;
+Terminal=false

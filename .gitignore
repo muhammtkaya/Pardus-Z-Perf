@@ -1,0 +1,17 @@
+# Derleme çıktıları (Aşama 2, 2.1: teslimde bulunmamalı)
+*.o
+source_code/daemon/zperfd
+source_code/daemon/tests/test_config
+source_code/daemon/tests/test_policy
+source_code/tools/probe/probe
+source_code/build/
+*.deb
+__pycache__/
+*.pyc
+
+# Ham ölçüm verileri büyük; yalnızca özet tablo ve grafikler depoya girer
+source_code/results/raw/
+*.csv
+
+# Ön inceleme çıktıları
+on_inceleme_*.txt
