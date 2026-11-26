@@ -1,6 +1,0 @@
-build/
-*.o
-*.deb
-__pycache__/
-*.pyc
-tests/report/data/*.raw
