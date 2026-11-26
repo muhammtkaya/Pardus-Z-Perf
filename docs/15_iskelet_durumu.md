@@ -29,12 +29,12 @@ make test
 ## Kontrol durumu
 | Kontrol | Sonuç |
 |---|---|
-| Tüm C modülleri `-Wall -Wextra -Wshadow` ile derleniyor | Uyarısız (WSL Ubuntu, gcc 15). **sd-bus ve json-c gerçek başlıklarıyla henüz derlenmedi**; Pardus'ta ilk `make` ile doğrulanacak |
-| `test_config` | 31/31 geçti |
-| `test_policy` | Politika TODO; 2/8 test geçiyor (beklenen) |
+| Tüm C modülleri `-Wall -Wextra -Wshadow` ile derleniyor | **Pardus 25'te uyarısız** (`make` ve `make test`, gerçek libsystemd ve json-c başlıklarıyla) |
+| `test_config` | 31/31 geçti (Pardus) |
+| `test_policy` | Politika TODO; 2/8 test geçiyor (beklenen, Pardus) |
 | Kabuk betikleri (`sh -n` / `bash -n`) | Geçti |
 | Python dosyaları (3.11+ sözdizimi) | Geçti; `zperfctl` Linux'ta servis yokken doğru hata veriyor |
-| Pardus üzerinde çalıştırma | **Yapılmadı** |
+| Pardus üzerinde çalıştırma | **Geçti.** `sudo ./daemon/zperfd -d -c config/zperf.conf`: servis başladı, PSI tetikleyicileri kuruldu, `zperfctl status` sokete bağlandı (SO_PEERCRED ile uid=1000) ve PSI değerlerini aldı, Ctrl+C ile temiz kapandı |
 
 ## Dosya bazında durum
 | Dosya | Hazır | TODO | Sorumlu | Gereksinim |
