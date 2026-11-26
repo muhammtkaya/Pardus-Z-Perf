@@ -1,14 +1,13 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later
- * zperfd - Pardus Z-Performans servisi (ILK ASAMA: iskelet)
+ * zperfd - Pardus Z-Performans servisi
  *
- * Bu asamada servis sunlari yapar:
  *   1. zram sikistirilmis takas aygitini kurar (yoksa olusturur).
  *   2. PSI tetikleyicileriyle bellek baskisini olay-guduml olarak izler.
- *   3. Baski olaylarini ve periyodik durumu gunluge yazar.
- *   4. SIGTERM/SIGINT alinca her seyi temiz birakir (zram'i soker).
- *
- * cgroup tasima/dondurma, memory.reclaim, politika motoru ve IPC
- * sonraki asamalarda eklenecektir (bkz. docs/architecture.md).
+ *   3. Baski kademesine gore politika uygular: kademe 1 odakta olmayan
+ *      uygulamalardan kucuk reclaim, kademe 2 en eski uygulamayi dondur +
+ *      sikistir (policy.c); odak gelince cozer.
+ *   4. /run/zperf.sock uzerinden ajan/arayuzle konusur (ipc.c).
+ *   5. SIGTERM/SIGINT alinca her seyi temiz birakir (cozer, zram'i soker).
  */
 #include "applist.h"
 #include "audio.h"
@@ -37,6 +36,10 @@
 #define STATUS_PERIOD_SEC 5
 #define EV_MAX 16
 #define ZPERF_SOCK "/run/zperf.sock"
+/* PSI tetikleyicileri baski altinda saniyede onlarca kez uyandirabilir
+ * (Pardus 6.12'de olculdu: ~18/sn). Politikayi her uyanista calistirmak
+ * gereksiz reclaim cagrisi ve CPU harcar; en fazla bu aralikta bir calistir. */
+#define POLICY_MIN_INTERVAL_MS 1000
 
 /* Kademe siniflandirma esikleri artik gecerli PROFILDEN okunur (profile.h):
  * uyandiktan sonra okunan avg10, profilin tier1/tier2 esikleriyle kiyaslanir.
@@ -164,16 +167,46 @@ static void status_cb(char *buf, size_t len)
         some = psi_avg10(p, PSI_SOME);
         full = psi_avg10(p, PSI_FULL);
     }
-    snprintf(buf, len,
+    int off = snprintf(buf, len,
              "{\"some\":%.2f,\"full\":%.2f,\"focus\":\"%s\","
-             "\"profile\":\"%s\",\"enabled\":%d}",
+             "\"profile\":\"%s\",\"enabled\":%d,\"apps\":[",
              some, full, policy_focused(), profile_name(), policy_enabled());
+    if (off < 0 || (size_t)off >= len)
+        return;
+
+    /* Yonetilen uygulamalar: panel bunlari listeler (donuk mu, sabit mi).
+     * Kendi arayuzumuz (zperf-*) listeye alinmaz. Tampon dolarsa kalan
+     * uygulamalar atlanir ama JSON yine de gecerli kapanir. */
+    int first = 1;
+    for (int i = 0; i < applist_count(); i++) {
+        app_t *a = applist_at(i);
+        if (!a || !a->used)
+            continue;
+        if (strncmp(a->name, "zperf", 5) == 0)
+            continue;
+        long long mem = cgroup_app_mem_current(a->name);
+        if (mem < 0)
+            mem = 0;
+        int n = snprintf(buf + off, len - (size_t)off,
+                 "%s{\"name\":\"%s\",\"frozen\":%d,\"never_freeze\":%d,\"mem\":%lld}",
+                 first ? "" : ",", a->name, a->frozen ? 1 : 0,
+                 a->never_freeze ? 1 : 0, mem);
+        if (n < 0 || (size_t)n >= len - (size_t)off)
+            break;                 /* tampon doldu: kalanlari atla */
+        off += n;
+        first = 0;
+    }
+    if ((size_t)off + 2 < len) {
+        buf[off++] = ']';
+        buf[off++] = '}';
+        buf[off] = '\0';
+    }
 }
 
 static void cmd_cb(const char *cmd, const char *name, int value)
 {
     if (strcmp(cmd, "never_freeze") == 0) {
-        applist_set_never_freeze(name, value);
+        policy_set_never_freeze(name, value);   /* on iken donuksa ayrica cozer */
         LOGI("Ayar: %s 'asla dondurma' = %d", name, value);
     } else if (strcmp(cmd, "profile") == 0) {
         if (profile_apply_named(name) == 0)
@@ -182,6 +215,8 @@ static void cmd_cb(const char *cmd, const char *name, int value)
             LOGW("Bilinmeyen profil: %s", name);
     } else if (strcmp(cmd, "enabled") == 0) {
         policy_set_enabled(value);
+    } else if (strcmp(cmd, "thaw") == 0) {
+        policy_thaw(name);
     }
 }
 
@@ -204,7 +239,7 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    LOGI("zperfd baslatiliyor (iskelet asamasi).");
+    LOGI("zperfd baslatiliyor.");
 
     /* --- cgroup tabani + politika --- */
     if (cgroup_init() != 0)
@@ -213,6 +248,7 @@ int main(int argc, char **argv)
     profile_apply_named("Dengeli");       /* baslangic profili */
     policy_set_event_cb(emit_event);      /* dondu/cozuldu -> ajanlara yayinla */
     policy_set_audio_cb(audio_is_playing); /* ses calan uygulamayi kurban secme */
+    policy_set_protected(getenv("ZPERF_PROTECT")); /* asla dondurulmayacak adlar */
     LOGI("Aktif profil: %s", profile_name());
 
     /* --- zram kurulumu --- */
@@ -263,11 +299,19 @@ int main(int argc, char **argv)
     if (ipc_init(epfd, ZPERF_SOCK, focus_cb, status_cb) != 0)
         LOGW("IPC baslatilamadi; odak bildirimleri alinamayacak.");
     ipc_set_cmd_handler(cmd_cb);
+    {   /* Yalnizca test: kök-baslatilan GUI polkit "active" oturumda gorunmez;
+         * ZPERF_TRUST_UID verildiyse o uid polkit'siz ayar yapabilir. */
+        const char *tu = getenv("ZPERF_TRUST_UID");
+        if (tu && *tu)
+            ipc_set_trust_uid(atol(tu));
+    }
 
     LOGI("Baski izleme ve politika motoru aktif.");
     report_pressure("Baslangic durumu");
 
     int running = 1;
+    long last_policy_ms = -POLICY_MIN_INTERVAL_MS;
+    long suppressed = 0;
     while (running) {
         struct epoll_event events[EV_MAX];
         int n = epoll_wait(epfd, events, EV_MAX, -1);
@@ -285,7 +329,18 @@ int main(int argc, char **argv)
             if (ev & EPOLLPRI) {
                 psi_trigger_t *t = events[i].data.ptr;
                 const char *kind = (t->kind == PSI_FULL) ? "full" : "some";
-                LOGI(">> BASKI OLAYI (%s tetikleyici uyandirdi)", kind);
+                long now = util_now_ms();
+                if (now - last_policy_ms < POLICY_MIN_INTERVAL_MS) {
+                    suppressed++;       /* yakin zamanda zaten islendi */
+                    continue;
+                }
+                last_policy_ms = now;
+                if (suppressed)
+                    LOGI(">> BASKI OLAYI (%s tetikleyici; son %ld uyanis birlestirildi)",
+                         kind, suppressed);
+                else
+                    LOGI(">> BASKI OLAYI (%s tetikleyici uyandirdi)", kind);
+                suppressed = 0;
                 int tier = report_pressure("   deger");
                 policy_on_tier(tier);   /* kademe 1: reclaim, 2: dondur+sikistir */
                 continue;

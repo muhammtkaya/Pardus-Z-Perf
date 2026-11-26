@@ -29,6 +29,12 @@ int  ipc_init(int epfd, const char *path,
 /* Arayuzden gelen ayar komutlari icin isleyici (istege bagli). */
 void ipc_set_cmd_handler(ipc_cmd_fn fn);
 
+/* YALNIZCA GELISTIRME/TEST: verilen uid'nin ayar komutlarini (profil/çöz/asla
+ * dondurma) polkit'e sormadan yapmasina izin verir. Kök-baslatilan test
+ * ortaminda GUI logind "active" oturumda gorunmedigi icin polkit reddeder;
+ * bu kapi testi acar. Uretimde ayarlanmaz (-1 = kapali) ve polkit tam uygulanir. */
+void ipc_set_trust_uid(long uid);
+
 /* fd, ipc'ye ait (dinleme veya istemci) mi? */
 int  ipc_owns_fd(int fd);
 

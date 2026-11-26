@@ -10,27 +10,23 @@ Lisans: GPL-3.0-or-later. Hedef: Pardus 25.0 XFCE (Linux ≥ 6.12).
 
 ## Geliştirme durumu
 
-Bu depo parçalar hâlinde geliştirilmektedir. Şu an tamamlanan:
+Servis (`zperfd`), odak ajanı, GTK arayüzü, profiller, polkit yetkilendirmesi ve
+`.deb` paketi hazır; Pardus 25.2 (çekirdek 6.12) üzerinde uçtan uca test edildi.
+Ayrıntılı durum ve kalan işler: [CHECKLIST.md](CHECKLIST.md).
 
-- **Aşama 1 — `zperfd` iskeleti** (bu sürüm): zram kurulumu, PSI olay döngüsü,
-  günlük kaydı ve temiz kapanış. Baskı olayları algılanır ve loglanır; henüz
-  **tepki verilmez** (cgroup taşıma, dondurma, `memory.reclaim` ve politika
-  motoru sonraki aşamada eklenecek).
-
-## Önemli: nerede derlenir?
-
-`zperfd` C servisi yalnızca **Linux/Pardus** üzerinde derlenip çalışır
-(sysfs, `swapon`, PSI, cgroup v2 Windows'ta yoktur). Önerilen akış:
-
-1. Pardus 25.0 XFCE'yi bir sanal makineye kur (VirtualBox, 2 GB RAM, 2 vCPU).
-2. Bu depoyu sanal makineye kopyala.
-3. Aşağıdaki adımlarla derleyip çalıştır.
+| Bileşen | Yol | Çalışır |
+|---|---|---|
+| `zperfd` (C, root servis) | `src/zperfd/` | systemd servisi |
+| Odak ajanı (Python, libwnck) | `src/agent/` | kullanıcı oturumu, otomatik başlar |
+| Denetim arayüzü (GTK 3) | `src/gui/` | kullanıcı, menüden |
 
 ## Derleme (Pardus üzerinde)
 
 ```sh
-sudo apt install build-essential     # gcc, make
+sudo apt install build-essential stress-ng gir1.2-wnck-3.0 gir1.2-notify-0.7 \
+                 python3-gi-cairo python3-matplotlib
 make                                 # -> build/zperfd
+make prober                          # -> build/interaction_prober (ölçüm)
 ```
 
 ## Çalıştırma (geliştirme / test)
@@ -75,9 +71,38 @@ sudo systemctl start zperfd
 journalctl -u zperfd -f
 ```
 
-## Doğrulama kontrol listesi (Aşama 1)
+## Arayüz ve ajan (geliştirme)
 
-- [ ] `make` hatasız derliyor.
-- [ ] `sudo ./build/zperfd --debug` zram aygıtını kuruyor (`cat /proc/swaps`).
-- [ ] `stress-ng` ile baskı üretince `BASKI OLAYI` logları görünüyor.
-- [ ] `Ctrl+C` sonrası `cat /proc/swaps` zram satırını artık göstermiyor.
+Servis çalışırken (`sudo ./build/zperfd --debug`), **normal kullanıcı** olarak:
+
+```sh
+python3 src/agent/main.py                         # odak ajanı (X11)
+PYTHONPATH=src/agent python3 src/gui/main.py      # denetim penceresi
+```
+
+Profil / aç-kapat / "asla dondurma" komutları polkit
+(`org.pardus.zperf.manage`) ister; politika dosyası kurulu değilse bu komutlar
+reddedilir. Geliştirmede: `sudo cp polkit/org.pardus.zperf.policy /usr/share/polkit-1/actions/`.
+Paket kurulunca arayüz menüde "Pardus Z-Performans" olarak görünür, ajan oturum
+açılışında kendiliğinden başlar.
+
+## Testler
+
+```sh
+tests/run-unit-tests.sh               # root'suz: psi/applist/ipc
+sudo tests/run-unit-tests.sh          # + cgroup/policy (gerçek cgroup v2)
+tests/test_agent_reconnect.py         # ajan istemcisi + yeniden bağlanma (sahte servis)
+sudo tests/load/pressure-e2e.sh       # uçtan uca: gerçek PSI baskısı + dondurma + yetki
+```
+
+`pressure-e2e.sh`, stress-ng'yi bellek sınırlı (`MemoryHigh`) bir systemd
+scope'unda çalıştırır; böylece RAM'i bol bir makinede de masaüstünü kilitlemeden
+gerçek bellek baskısı oluşur.
+
+## Paket
+
+```sh
+sudo apt install debhelper
+ln -sfn packaging/debian debian && dpkg-buildpackage -us -uc -b && rm debian
+sudo apt install ../zperf_0.1.0_amd64.deb
+```

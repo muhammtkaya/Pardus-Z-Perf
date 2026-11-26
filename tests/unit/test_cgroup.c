@@ -4,11 +4,17 @@
  * dondurur, geri kazandirir ve temizler; her adimi dogrular.
  *
  * Derleme:
- *   gcc -I src/zperfd tests/unit/test_cgroup.c \
- *       src/zperfd/cgroup.c src/zperfd/util.c src/zperfd/log.c -o /tmp/test_cgroup
+ *   gcc -I src/zperfd tests/unit/test_cgroup.c src/zperfd/cgroup.c \
+ *       src/zperfd/zram.c src/zperfd/util.c src/zperfd/log.c -o /tmp/test_cgroup
+ *
+ * memory.reclaim anonim sayfalari ancak bir TAKAS alani varsa bosaltabilir.
+ * Sistemde zram takasi yoksa test kendi gecici zram'ini kurar ve sonda soker
+ * (Pardus'ta zram yalnizca zperfd calisirken vardir).
  */
 #include "cgroup.h"
 #include "log.h"
+#include "util.h"
+#include "zram.h"
 
 #include <signal.h>
 #include <stdio.h>
@@ -51,6 +57,12 @@ int main(void)
 {
     if (geteuid() != 0) { printf("Bu test root gerektirir.\n"); return 77; }
     log_set_level(LOG_INFO_);
+
+    zram_dev_t zram = { .device_id = -1 };
+    if (!util_zram_swap_active()) {
+        printf("== gecici zram takasi (reclaim icin) ==\n");
+        CHECK(zram_setup(&zram, "lz4", 25, 100) == 0, "gecici zram takasi kuruldu");
+    }
 
     printf("== cgroup_init ==\n");
     CHECK(cgroup_init() == 0, "cgroup tabani olusturuldu");
@@ -105,6 +117,7 @@ int main(void)
     waitpid(child, NULL, 0);
     CHECK(cgroup_app_destroy(APP) == 0, "app-test silindi");
     cgroup_cleanup_all();
+    zram_teardown(&zram);        /* yalnizca biz kurduysak soker */
 
     printf("\n%s\n", fails == 0 ? "TUM TESTLER GECTI" : "BAZI TESTLER KALDI");
     return fails == 0 ? 0 : 1;

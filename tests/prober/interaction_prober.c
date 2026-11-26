@@ -28,7 +28,7 @@
 static volatile sig_atomic_t g_stop = 0;
 static void on_sig(int s) { (void)s; g_stop = 1; }
 
-static long cmp_long(const void *a, const void *b)
+static int cmp_long(const void *a, const void *b)
 {
     long x = *(const long *)a, y = *(const long *)b;
     return (x > y) - (x < y);

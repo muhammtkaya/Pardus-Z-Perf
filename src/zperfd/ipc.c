@@ -1,23 +1,31 @@
 /* SPDX-License-Identifier: GPL-3.0-or-later */
 #include "ipc.h"
 #include "log.h"
+#include "util.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/epoll.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/un.h>
 #include <unistd.h>
 
 #define MAX_CLIENTS 8
 #define CBUF_SIZE   2048
 
+#define POLKIT_ACTION "org.pardus.zperf.manage"
+
 typedef struct {
     int    fd;                 /* -1 = bos yuva */
     char   buf[CBUF_SIZE];     /* yarim satirlar icin biriktirme */
     size_t len;
+    uid_t  uid;                /* SO_PEERCRED: baglanan surecin kimligi */
+    pid_t  pid;
+    int    auth;               /* ayar yetkisi: -1 bilinmiyor, 0 yok, 1 var */
 } client_t;
 
 static int           g_epfd = -1;
@@ -27,6 +35,7 @@ static ipc_focus_fn  g_on_focus;
 static ipc_status_fn g_status;
 static ipc_cmd_fn    g_on_cmd;
 static client_t      g_clients[MAX_CLIENTS];
+static long          g_trust_uid = -1;   /* yalnizca test: polkit'siz guvenilen uid */
 
 /* --- kucuk JSON ayikla (tam ayristirici degil; bilinen alanlar icin) --- */
 
@@ -63,6 +72,114 @@ static int json_int(const char *s, const char *key, long *out)
     return 1;
 }
 
+/* --- yetki / dogrulama yardimcilari --- */
+
+/* Uygulama adi cgroup dizin adina donusur (app-<ad>); yol gecisini ve JSON
+ * enjeksiyonunu onlemek icin yalnizca [A-Za-z0-9._-] kabul edilir, '.' ile
+ * baslayamaz. allow_space: profil adlari ("Akilli Tahta") icin. */
+static int valid_name(const char *s, int allow_space)
+{
+    if (!s || !*s || *s == '.')
+        return 0;
+    for (const char *p = s; *p; p++) {
+        unsigned char ch = (unsigned char)*p;
+        if (isalnum(ch) || ch == '_' || ch == '-' || ch == '.')
+            continue;
+        if (allow_space && ch == ' ')
+            continue;
+        return 0;
+    }
+    return 1;
+}
+
+/* /proc/<pid>/status icindeki gercek UID; hata halinde -1. */
+static long proc_uid(pid_t pid)
+{
+    char path[64], buf[4096];
+    snprintf(path, sizeof(path), "/proc/%d/status", (int)pid);
+    if (util_read_str(path, buf, sizeof(buf)) < 0)
+        return -1;
+    const char *p = strstr(buf, "\nUid:");
+    if (!p)
+        return -1;
+    return strtol(p + 5, NULL, 10);
+}
+
+/* /proc/<pid>/stat 22. alan (baslangic zamani); pkcheck PID yeniden
+ * kullanimi yarisini onlemek icin bunu ister. Hata halinde 0. */
+static unsigned long long proc_start_time(pid_t pid)
+{
+    char path[64], buf[1024];
+    snprintf(path, sizeof(path), "/proc/%d/stat", (int)pid);
+    if (util_read_str(path, buf, sizeof(buf)) < 0)
+        return 0;
+    char *p = strrchr(buf, ')');          /* comm parantez icerebilir */
+    if (!p)
+        return 0;
+    /* Her adimda p, "field" numarali alandan onceki bosluga ilerler. */
+    for (int field = 3; field <= 22 && p; field++)
+        p = strchr(p + 1, ' ');
+    return p ? strtoull(p + 1, NULL, 10) : 0;
+}
+
+/* Odak mesajindaki PID'i bu istemci yonetebilir mi? Root her seyi;
+ * normal kullanici yalnizca KENDI sureclerini (baskasinin surecini
+ * dondurtmak yetki yukseltmesi olurdu). */
+static int focus_allowed(const client_t *c, pid_t target)
+{
+    if (target <= 1)
+        return 0;
+    if (c->uid == 0)
+        return 1;
+    long owner = proc_uid(target);
+    return owner >= 0 && (uid_t)owner == c->uid;
+}
+
+/* Ayar komutlari (profil/ac-kapat/asla dondurma) icin yetki: root ise
+ * dogrudan; degilse polkit (pkcheck, etkin yerel oturuma parolasiz).
+ * Sonuc baglanti basina onbelleklenir. */
+static int settings_allowed(client_t *c)
+{
+    if (c->uid == 0)
+        return 1;
+    /* YALNIZCA TEST: guvenilen uid polkit'siz gecer (bkz. ipc_set_trust_uid). */
+    if (g_trust_uid >= 0 && (long)c->uid == g_trust_uid)
+        return 1;
+    if (c->auth >= 0)
+        return c->auth;
+
+    char proc[96];
+    snprintf(proc, sizeof(proc), "%d,%llu,%u", (int)c->pid,
+             proc_start_time(c->pid), (unsigned)c->uid);
+    char *const argv[] = { "pkcheck", "--action-id", POLKIT_ACTION,
+                           "--process", proc, NULL };
+    int rc = util_run(argv);
+    c->auth = (rc == 0);
+    LOGI("polkit %s (uid=%u pid=%d): %s", POLKIT_ACTION, (unsigned)c->uid,
+         (int)c->pid, c->auth ? "izin verildi" : "reddedildi");
+    return c->auth;
+}
+
+static void reply(client_t *c, const char *line)
+{
+    char out[256];
+    int n = snprintf(out, sizeof(out), "%s\n", line);
+    if (n > 0) {
+        ssize_t w = write(c->fd, out, (size_t)n < sizeof(out) ? (size_t)n : sizeof(out) - 1);
+        (void)w;
+    }
+}
+
+static void deny(client_t *c, const char *cmd, const char *why)
+{
+    char b[160];
+    LOGW("IPC '%s' reddedildi (uid=%u pid=%d): %s", cmd, (unsigned)c->uid,
+         (int)c->pid, why);
+    snprintf(b, sizeof(b), "{\"type\":\"error\",\"cmd\":\"%s\",\"error\":\"%s\"}",
+             cmd, why);
+    reply(c, b);
+}
+
 /* --- istemci yonetimi --- */
 
 static client_t *client_slot(int fd)
@@ -95,12 +212,16 @@ static void dispatch_line(client_t *c, char *line)
     if (strcmp(type, "focus") == 0) {
         char name[64] = {0};
         long pid = 0;
-        if (json_str(line, "name", name, sizeof(name)) &&
-            json_int(line, "pid", &pid) && g_on_focus) {
+        if (!json_str(line, "name", name, sizeof(name)) ||
+            !json_int(line, "pid", &pid))
+            return;
+        if (!valid_name(name, 0)) { deny(c, "focus", "gecersiz-ad"); return; }
+        if (!focus_allowed(c, (pid_t)pid)) { deny(c, "focus", "pid-yetkisi-yok"); return; }
+        if (g_on_focus)
             g_on_focus(name, (pid_t)pid);
-        }
     } else if (strcmp(type, "status") == 0) {
-        char out[512] = "{\"ok\":1}";
+        /* Uygulama listesi eklendigi icin tampon genis: ~APP_MAX giris. */
+        char out[4096] = "{\"ok\":1}";
         if (g_status)
             g_status(out, sizeof(out));
         size_t n = strlen(out);
@@ -110,18 +231,36 @@ static void dispatch_line(client_t *c, char *line)
     } else if (strcmp(type, "never_freeze") == 0) {
         char name[64] = {0};
         long on = 0;
-        if (json_str(line, "name", name, sizeof(name)) &&
-            json_int(line, "on", &on) && g_on_cmd) {
+        if (!json_str(line, "name", name, sizeof(name)) ||
+            !json_int(line, "on", &on))
+            return;
+        if (!valid_name(name, 0)) { deny(c, "never_freeze", "gecersiz-ad"); return; }
+        if (!settings_allowed(c)) { deny(c, "never_freeze", "yetki-yok"); return; }
+        if (g_on_cmd)
             g_on_cmd("never_freeze", name, (int)on);
-        }
     } else if (strcmp(type, "profile") == 0) {
         char name[64] = {0};
-        if (json_str(line, "name", name, sizeof(name)) && g_on_cmd)
+        if (!json_str(line, "name", name, sizeof(name)))
+            return;
+        if (!valid_name(name, 1)) { deny(c, "profile", "gecersiz-ad"); return; }
+        if (!settings_allowed(c)) { deny(c, "profile", "yetki-yok"); return; }
+        if (g_on_cmd)
             g_on_cmd("profile", name, 0);
     } else if (strcmp(type, "enabled") == 0) {
         long on = 1;
-        if (json_int(line, "on", &on) && g_on_cmd)
+        if (!json_int(line, "on", &on))
+            return;
+        if (!settings_allowed(c)) { deny(c, "enabled", "yetki-yok"); return; }
+        if (g_on_cmd)
             g_on_cmd("enabled", "", (int)on);
+    } else if (strcmp(type, "thaw") == 0) {
+        char name[64] = {0};
+        if (!json_str(line, "name", name, sizeof(name)))
+            return;
+        if (!valid_name(name, 0)) { deny(c, "thaw", "gecersiz-ad"); return; }
+        if (!settings_allowed(c)) { deny(c, "thaw", "yetki-yok"); return; }
+        if (g_on_cmd)
+            g_on_cmd("thaw", name, 0);
     }
 }
 
@@ -177,11 +316,15 @@ static void accept_clients(void)
             return;
         }
 
-        /* Istemci kimligini al (gelistirmede bilgi; polkit sonraki asamada). */
+        /* Istemci kimligi: odak PID sahipligi ve polkit yetkisi icin. */
         struct ucred cr;
         socklen_t crl = sizeof(cr);
-        if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cr, &crl) == 0)
-            LOGD("IPC baglanti: uid=%d pid=%d", (int)cr.uid, (int)cr.pid);
+        if (getsockopt(cfd, SOL_SOCKET, SO_PEERCRED, &cr, &crl) != 0) {
+            LOGW("SO_PEERCRED okunamadi; baglanti reddedildi.");
+            close(cfd);
+            continue;
+        }
+        LOGD("IPC baglanti: uid=%d pid=%d", (int)cr.uid, (int)cr.pid);
 
         client_t *slot = client_slot(-1);
         if (!slot) {
@@ -191,6 +334,9 @@ static void accept_clients(void)
         }
         slot->fd = cfd;
         slot->len = 0;
+        slot->uid = cr.uid;
+        slot->pid = cr.pid;
+        slot->auth = -1;
         struct epoll_event ev = { .events = EPOLLIN, .data = { .fd = cfd } };
         if (epoll_ctl(g_epfd, EPOLL_CTL_ADD, cfd, &ev) < 0) {
             LOGW("istemci fd epoll'a eklenemedi: %s", strerror(errno));
@@ -228,6 +374,12 @@ int ipc_init(int epfd, const char *path,
         g_listen = -1;
         return -1;
     }
+    /* Soket herkese acik: odak ajani ve arayuz normal kullanici olarak
+     * calisir. Yetki baglanti basina SO_PEERCRED + polkit ile denetlenir
+     * (bkz. focus_allowed / settings_allowed). */
+    if (chmod(path, 0666) < 0)
+        LOGW("IPC soket izni ayarlanamadi: %s", strerror(errno));
+
     if (listen(g_listen, 8) < 0) {
         LOGE("IPC listen: %s", strerror(errno));
         close(g_listen);
@@ -250,6 +402,14 @@ int ipc_init(int epfd, const char *path,
 void ipc_set_cmd_handler(ipc_cmd_fn fn)
 {
     g_on_cmd = fn;
+}
+
+void ipc_set_trust_uid(long uid)
+{
+    g_trust_uid = uid;
+    if (uid >= 0)
+        LOGW("GELISTIRME KAPISI: uid=%ld ayar komutlarini polkit'siz yapabilir "
+             "(yalnizca test; uretimde ayarlamayin).", uid);
 }
 
 int ipc_owns_fd(int fd)

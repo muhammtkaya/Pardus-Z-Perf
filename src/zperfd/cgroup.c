@@ -93,6 +93,14 @@ static pid_t parent_of(pid_t pid)
 int cgroup_app_move_tree(const char *name, pid_t root)
 {
     int moved = 0;
+    /* KRITIK: kendi surecimizi (zperfd) asla bir uygulama cgroup'una tasima.
+     * Aksi halde, zperfd odaktaki uygulamanin bir alt sureci oldugunda (or.
+     * test o uygulamanin terminalinden baslatildiginda) bu cgroup dondurulunca
+     * SERVIS KENDINI DONDURUR ve tamamen kilitlenir (test bulgusu). */
+    pid_t self = getpid();
+    if (root == self)
+        return 0;
+
     /* Once koku tasi. */
     if (cgroup_app_move_pid(name, root) == 0)
         moved++;
@@ -107,8 +115,8 @@ int cgroup_app_move_tree(const char *name, pid_t root)
     while ((e = readdir(d)) != NULL) {
         char *end;
         long p = strtol(e->d_name, &end, 10);
-        if (*end != '\0' || p <= 0 || (pid_t)p == root)
-            continue;
+        if (*end != '\0' || p <= 0 || (pid_t)p == root || (pid_t)p == self)
+            continue;              /* kendi surecimizi tasima (bkz. yukarisi) */
 
         /* p'nin ata zincirinde root var mi? */
         pid_t cur = (pid_t)p;

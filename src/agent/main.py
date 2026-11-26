@@ -8,6 +8,7 @@ from zperf_agent.focus import FocusWatcher
 
 
 def main():
+    sys.stdout.reconfigure(line_buffering=True)   # journald/terminalde aninda gorunsun
     sock = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_SOCK
     client = ZperfClient(sock)
     try:
@@ -15,9 +16,8 @@ def main():
     except OSError as e:
         print(f"zperfd soketine baglanilamadi ({sock}): {e}", file=sys.stderr)
         # Servis henuz baslamamis olabilir; ajan yine de calissin,
-        # ilk odakta yeniden baglanma denenir.
+        # FocusWatcher periyodik olarak yeniden baglanmayi dener.
     watcher = FocusWatcher(client)
-    print("zperf-agent: odak izleme basladi.")
     watcher.run()
 
 

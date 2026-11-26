@@ -2,6 +2,8 @@
  * IPC soket sunucusu birim testi (root gerekmez; /tmp'de soket).
  * Bir istemci baglanip focus ve status mesaji gonderir; sunucunun odak
  * mesajini dogru ayristirdigini ve durum yanitini dondurdugunu dogrular.
+ * Ayrica gecersiz adin ve PID 1'e odagin reddedildigini
+ * ({"type":"error"} yaniti) dogrular.
  *
  * Derleme:
  *   gcc -I src/zperfd tests/unit/test_ipc.c src/zperfd/ipc.c \
@@ -22,11 +24,15 @@
 
 static char g_name[64] = {0};
 static long g_pid = 0;
+static int  g_count = 0;     /* kac odak mesaji KABUL edildi */
+static int  g_errors = 0;    /* istemcinin aldigi {"type":"error"} sayisi */
 
 static void focus_cb(const char *name, pid_t pid)
 {
-    snprintf(g_name, sizeof(g_name), "%s", name);
-    g_pid = pid;
+    if (g_count++ == 0) {        /* ilk kabul edilen odagi sakla */
+        snprintf(g_name, sizeof(g_name), "%s", name);
+        g_pid = pid;
+    }
 }
 static void status_cb(char *buf, size_t len)
 {
@@ -42,16 +48,35 @@ static int run_client(void)
     snprintf(a.sun_path, sizeof(a.sun_path), "%s", SOCK);
     if (connect(fd, (struct sockaddr *)&a, sizeof(a)) != 0) { perror("connect"); return 1; }
 
-    const char *f = "{\"type\":\"focus\",\"name\":\"firefox\",\"pid\":4321}\n";
+    /* 1) gecerli: kendi PID'imiz.  2) gecersiz ad (yol gecisi).
+     * 3) init (PID 1): root bile olsa her zaman reddedilmeli. */
+    char f[128];
+    snprintf(f, sizeof(f), "{\"type\":\"focus\",\"name\":\"firefox\",\"pid\":%d}\n",
+             (int)getpid());
+    const char *bad = "{\"type\":\"focus\",\"name\":\"../../evil\",\"pid\":1}\n";
+    const char *foreign = "{\"type\":\"focus\",\"name\":\"init\",\"pid\":1}\n";
     const char *s = "{\"type\":\"status\"}\n";
     (void)!write(fd, f, strlen(f));
+    (void)!write(fd, bad, strlen(bad));
+    (void)!write(fd, foreign, strlen(foreign));
     (void)!write(fd, s, strlen(s));
 
-    char buf[256] = {0};
-    ssize_t n = read(fd, buf, sizeof(buf) - 1);
-    if (n > 0) printf("  istemci durum yaniti aldi: %s", buf);
+    /* Yanitlar: 2 hata satiri + 1 durum satiri (sirayla). */
+    char buf[1024] = {0};
+    size_t len = 0;
+    int lines = 0;
+    while (lines < 3 && len < sizeof(buf) - 1) {
+        ssize_t n = read(fd, buf + len, sizeof(buf) - 1 - len);
+        if (n <= 0) break;
+        for (ssize_t i = 0; i < n; i++) if (buf[len + i] == '\n') lines++;
+        len += (size_t)n;
+    }
+    printf("  istemci yanitlari:\n%s", buf);
+    fflush(stdout);              /* cocuk _exit ile cikar; tamponu bosalt */
     close(fd);
-    return 0;
+    int errs = 0;
+    for (const char *q = buf; (q = strstr(q, "\"type\":\"error\"")); q++) errs++;
+    return errs;   /* cikis kodu = alinan hata sayisi */
 }
 
 int main(void)
@@ -84,15 +109,26 @@ int main(void)
                 ipc_handle_fd(evs[i].data.fd);
     }
 
-    waitpid(client, NULL, 0);
+    int st = 0;
+    waitpid(client, &st, 0);
+    g_errors = WIFEXITED(st) ? WEXITSTATUS(st) : -1;
     ipc_shutdown();
 
     int fails = 0;
     printf("== dogrulama ==\n");
     if (strcmp(g_name, "firefox") == 0) printf("  [GECTI] odak adi 'firefox'\n");
     else { printf("  [KALDI] odak adi '%s'\n", g_name); fails++; }
-    if (g_pid == 4321) printf("  [GECTI] odak pid 4321\n");
-    else { printf("  [KALDI] odak pid %ld\n", g_pid); fails++; }
+    if (g_pid == (long)client) printf("  [GECTI] odak pid = istemci pid (%ld)\n", g_pid);
+    else { printf("  [KALDI] odak pid %ld (beklenen %d)\n", g_pid, (int)client); fails++; }
+
+    /* PID <= 1 root icin bile her zaman reddedilir: yalnizca 1 odak kabul. */
+    int want_count = 1, want_err = 2;
+    if (g_count == want_count) printf("  [GECTI] kabul edilen odak sayisi %d\n", g_count);
+    else { printf("  [KALDI] kabul edilen odak sayisi %d (beklenen %d)\n", g_count, want_count); fails++; }
+    if (g_errors == want_err) printf("  [GECTI] reddedilen mesaj sayisi %d (gecersiz ad + PID 1)\n",
+                                     g_errors);
+    else { printf("  [KALDI] reddedilen mesaj sayisi %d (beklenen %d)\n", g_errors, want_err); fails++; }
+
 
     printf("\n%s\n", fails == 0 ? "TUM TESTLER GECTI" : "BAZI TESTLER KALDI");
     return fails ? 1 : 0;

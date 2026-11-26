@@ -1,0 +1,14 @@
+[Desktop Entry]
+Type=Application
+Name=Pardus Z-Performans
+Name[en]=Pardus Z-Performance
+GenericName=Bellek Yöneticisi
+GenericName[en]=Memory Manager
+Comment=Bellek baskısını izle, profil seç, uygulamaları dondurmadan muaf tut
+Comment[en]=Monitor memory pressure, choose a profile, exempt applications from freezing
+Exec=zperf-gui
+Icon=utilities-system-monitor
+Terminal=false
+Categories=System;Monitor;
+Keywords=memory;ram;zram;swap;bellek;performans;
+StartupNotify=true

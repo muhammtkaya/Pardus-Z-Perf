@@ -1,13 +1,18 @@
 # Pardus Z-Performans — Yapıldı / Yapılacak Listesi
 
-Son güncelleme: 2026-11-16 (profiller + bellek-duyarlı kurban + periyodik çözme +
-olay itme kanalı + arayüz grafiği/anahtarı + polkit + protokol dokümanı +
-Parça 7: prober/workload/measure/analyze + .deb paketleme)
-C birim testleri: `sudo tests/run-unit-tests.sh` → **5 geçti, 0 kaldı**
-Python: 9 dosya söz dizimi OK + ajan↔servis entegrasyon testi PASS
-Test ortamı: WSL2 Ubuntu, Linux 6.18 (cgroup v2, PSI açık). **Proje artık bare-metal
-Pardus'a taşındı; nihai doğrulama Pardus 25.0 XFCE'de yapılacak** (Parça 7 ölçümleri
-ve X11/ses testleri orada).
+Son güncelleme: 2026-11-16 — **Pardus 25.2 bare-metal doğrulaması** (çekirdek
+6.12.57, XFCE/X11, 16 GB RAM) + IPC yetkilendirme (SO_PEERCRED + polkit) +
+.desktop/autostart + ajan yeniden bağlanma + uçtan uca baskı testi + .deb.
+
+Pardus'ta (sudo):
+- C birim testleri `sudo tests/run-unit-tests.sh` → **5/5** (test_ipc beklentisi
+  düzeltildi; ikinci turda 4/5 idi, kod değil test hatasıydı)
+- `tests/test_agent_reconnect.py` (root/X11 gerekmez) → PASS
+- **`sudo tests/load/pressure-e2e.sh` → GEÇTİ** (gerçek PSI baskısı, A donduruldu,
+  B korundu, polkit + PID sahipliği, temiz kapanış)
+- `dpkg-buildpackage -us -uc -b` → `zperf_0.1.0_amd64.deb` BAŞARILI
+
+Önceki geliştirme ortamı WSL2 Ubuntu (Linux 6.18) idi.
 
 Durum anahtarı: `[x]` bitti ve test edildi · `[~]` kısmen · `[ ]` yapılmadı
 
@@ -53,6 +58,10 @@ Durum anahtarı: `[x]` bitti ve test edildi · `[~]` kısmen · `[ ]` yapılmad�
 - [x] "Asla dondurma" bayrağı (applist düzeyinde)
 - [x] **IPC**: `/run/zperf.sock` Unix soketi, satır tabanlı JSON — `ipc.c`
 - [x] `SO_PEERCRED` ile istemci kimliği (uid/pid)
+- [x] **Yetkilendirme (Pardus'ta test edildi)**: soket `0666`; `status` herkese,
+      `focus` yalnızca istemcinin KENDİ PID'leri (PID ≤ 1 hep ret), ayar komutları
+      root veya polkit `org.pardus.zperf.manage` (`pkcheck`, etkin oturuma parolasız).
+      Ad doğrulama `[A-Za-z0-9._-]` (cgroup yol geçişi engeli). Ret → `{"type":"error"}`
 - [x] Mesajlar: `focus` (ajandan) ve `status` (JSON durum yanıtı)
 - [x] IPC `epoll` ile ana döngüye entegre edildi
 - [x] Birim testleri: `test_applist`, `test_policy` (gerçek cgroup), `test_ipc` → hepsi PASS
@@ -119,16 +128,25 @@ Bu maddeler testlerle ortaya çıktı; öneride öngörülmemişti:
 
 ## ⬜ Yapılacaklar
 
-### Pardus XFCE/X11'de çalıştırma (bare metal — yeni ortam)
-- [ ] Ajanı ve arayüzü gerçek Pardus XFCE/X11 oturumunda çalıştırıp doğrulama
-      (libwnck odak, GTK pencere, event→bildirim, profil/anahtar canlı)
+### Pardus XFCE/X11'de çalıştırma (bare metal)
+- [~] Ajan + arayüz gerçek XFCE oturumunda: ikisi de normal kullanıcıyla
+      açılıyor (çökme yok). **Kalan:** canlı servisle elle doğrulama (libwnck odak,
+      event→bildirim, profil/anahtar, "asla dondurma" düğmesi)
+- [x] **Soket yetkisi**: önceden `root 0755` idi → normal kullanıcı GUI/ajan
+      BAĞLANAMIYORDU (testler root'la koştuğu için görünmüyordu). Düzeltildi.
+- [x] `.desktop` dosyaları: `data/zperf-gui.desktop` (menü) +
+      `data/zperf-agent.desktop` (`/etc/xdg/autostart`); `desktop-file-validate` temiz
+- [x] Ajan yeniden bağlanma: kopunca 3 sn'de bir yeniden dener, olay izlemesini
+      yeni sokete taşır, son odağı yeniden gönderir (`tests/test_agent_reconnect.py`)
+- [x] İstemci satır tabanlı okuma: `get_status` araya giren event/error satırlarını
+      atlıyor (önceden olay satırını durum yanıtı sanabiliyordu)
+- [x] GUI polkit reddini durum satırında gösteriyor
 - [ ] `audio.c`'yi gerçek PipeWire ile doğrula (gerekirse kök yerine kullanıcı
       oturumundan pactl / XDG_RUNTIME_DIR ayarı)
-- [ ] Event kanalı yeniden-bağlanma: ajan servise yeniden bağlanınca io-watch
-      bayatlıyor (bilinen sınır); kalıcı kanal için reconnect eklenebilir
 
 ### Parça 7 — Test düzeneği + ölçüm + paketleme (2026-11-16 — yazıldı + WSL'de doğrulandı)
-- [x] `tests/prober/interaction_prober.c` (M1 takılma ölçeri) — derlendi+çalıştı;
+- [x] `tests/prober/interaction_prober.c` (M1 takılma ölçeri) — derlendi+çalıştı
+      (Pardus GCC 14: `qsort` karşılaştırıcısı `long`→`int` düzeltildi);
       CLOCK_MONOTONIC/TIMER_ABSTIME ile uyanma gecikmesi, CSV + p50/p95/p99/max özet
 - [x] `tests/load/workload.sh` — sentetik (stress-ng/python ayırıcı) + `--apps` (gerçek
       Firefox/LibreOffice/Evince) kipleri; `bash -n` temiz
@@ -144,17 +162,31 @@ Bu maddeler testlerle ortaya çıktı; öneride öngörülmemişti:
 > M1–M6 tanımları dosya başlıklarında; nihai rapordaki ifadelerle uyumlanacak.
 
 ### Pardus'ta doğrulama (bare metal — Pardus artık kurulu)
-- [ ] `make` ile derle, `sudo ./build/zperfd --debug` ile çalıştır
-- [ ] Pardus çekirdeğinde lz4/zstd algoritmalarını doğrula (öneride destekli deniyor)
+- [x] `make` ile derle (GCC 14, uyarısız; dpkg sertleştirme bayraklarıyla da),
+      `sudo ./build/zperfd --debug` ile çalıştır
+- [x] Pardus çekirdeğinde algoritmalar: `lz4 lz4hc zstd deflate` mevcut; lz4 etkin
+- [x] Boştaki `zram0` sahipleniliyor (önceden `modprobe` zram0'ı boş bırakıp zram1 açılıyordu)
+- [x] **Gerçek baskı testi** (`tests/load/pressure-e2e.sh`; stress-ng `MemoryHigh=400M`
+      scope'ta): some avg10 en yüksek %46.6, BASKI OLAYI alındı, kademe 2'de en eski
+      uygulama (A) donduruldu ve 300 MB → 0 MB sıkıştırıldı, odaktaki B hiç donmadı,
+      `frozen` olayı yayınlandı, kapanışta zram/soket/donmuş cgroup kalmadı
+- [x] PSI uyanış fırtınası: baskıda ~18 uyanış/sn ölçüldü → politika en fazla
+      1/sn çalışacak şekilde birleştirildi; < 4 MB belleği olan uygulamaya reclaim yok
 - [ ] Oturum cgroup'undan taşımanın systemd/logind ile çakışmadığını doğrula
       (risk maddesi; gerekirse D-Bus transient scope'a geç)
 - [ ] X11'de bir uygulamayı dondurmanın compositor'ı kilitlemediğini test et
 - [ ] `sudo tests/measure/run.sh` ile A/B/C/D ölçümlerini al, `analyze.py` ile M1–M6
-- [ ] `.deb` üret (`ln -sf packaging/debian debian && dpkg-buildpackage -us -uc -b`)
+- [x] `.deb` üret (`ln -sfn packaging/debian debian && dpkg-buildpackage -us -uc -b`)
+      → BAŞARILI. Düzeltilenler: dpkg `CFLAGS` `-D_GNU_SOURCE`'u eziyordu (derleme
+      kırılıyordu); Depends'e `python3-gi-cairo` (grafik), `polkitd` (pkcheck),
+      `kmod`, `util-linux` eklendi; `gir1.2-notify-0.7` Recommends
+- [ ] `.deb`'i temiz bir Pardus'a kurup servis + autostart + menüyü doğrula
 
 ---
 
 ## Not: bilinen küçük konular
+- Depo Windows'tan yüklendiği için betiklerde çalıştırma izni yoktu; git'te `+x` verildi.
+- `test_cgroup` reclaim adımı takas ister; zram yoksa test geçici zram kurar.
 - Çıkışta boş `zperf.slice` dizini kalır (zararsız; yeniden başlatmada kullanılır).
 - Geliştirme WSL2'de yapıldı; WSL çekirdeği lz4 desteklemiyor (Pardus destekliyor).
 - **Üst klasör adında boşluk var** ("Pardus Z-Performance") → mutlak yollu derleme

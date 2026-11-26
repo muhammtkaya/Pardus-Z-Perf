@@ -4,3 +4,12 @@ build/
 __pycache__/
 *.pyc
 tests/report/data/*.raw
+
+# debhelper / dpkg-buildpackage ciktilari (paketleme sirasinda uretilir)
+packaging/debian/.debhelper/
+packaging/debian/zperf/
+packaging/debian/zperf-dbgsym/
+packaging/debian/files
+packaging/debian/debhelper-build-stamp
+packaging/debian/*.substvars
+packaging/debian/*.debhelper

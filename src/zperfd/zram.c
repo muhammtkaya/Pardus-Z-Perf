@@ -5,6 +5,7 @@
 
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/swap.h>
 #include <unistd.h>
@@ -12,7 +13,8 @@
 #define ZRAM_CONTROL_ADD    "/sys/class/zram-control/hot_add"
 #define ZRAM_CONTROL_REMOVE "/sys/class/zram-control/hot_remove"
 
-/* zram cekirdek modulunun yuklu oldugundan emin olur. */
+/* zram cekirdek modulunun yuklu oldugundan emin olur.
+ * 0: zaten yukluydu, 1: biz yukledik, -1: hata. */
 static int ensure_module(void)
 {
     if (util_exists("/sys/class/zram-control"))
@@ -23,7 +25,19 @@ static int ensure_module(void)
         LOGE("modprobe zram basarisiz");
         return -1;
     }
-    return util_exists("/sys/class/zram-control") ? 0 : -1;
+    return util_exists("/sys/class/zram-control") ? 1 : -1;
+}
+
+/* modprobe zram, varsayilan olarak bos bir zram0 olusturur (num_devices=1).
+ * Onu kullanmazsak hot_add zram1 ekler ve zram0 bosta kalir. Bu yuzden
+ * hic yapilandirilmamis (disksize 0) bir zram0 varsa onu sahiplen; disksize
+ * ayarlanmis (baskasinin kurdugu) aygitlara dokunulmaz. */
+static int claim_fresh_zram0(void)
+{
+    char buf[32];
+    if (util_read_str("/sys/block/zram0/disksize", buf, sizeof(buf)) < 0)
+        return -1;
+    return (strtoull(buf, NULL, 10) == 0) ? 0 : -1;
 }
 
 /* Yeni bir zram aygiti ekler ve numarasini dondurur; hata halinde -1. */
@@ -101,10 +115,15 @@ int zram_setup(zram_dev_t *out, const char *algorithm,
     }
     uint64_t disksize = ram / 100ULL * ram_percent;
 
-    if (ensure_module() != 0)
+    int loaded = ensure_module();
+    if (loaded < 0)
         return -1;
 
-    int id = add_device();
+    int id = claim_fresh_zram0();
+    if (id < 0)
+        id = add_device();
+    else
+        LOGD("Bos zram0 sahiplenildi (modul %s).", loaded ? "yeni yuklendi" : "zaten yukluydu");
     if (id < 0)
         return -1;
 

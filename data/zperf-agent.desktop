@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=Pardus Z-Performans Ajanı
+Name[en]=Pardus Z-Performance Agent
+Comment=Odaktaki pencereyi zperfd servisine bildirir (bellek baskısında doğru uygulamanın dondurulması için)
+Comment[en]=Reports the focused window to zperfd so the right applications are frozen under memory pressure
+Exec=zperf-agent
+Icon=utilities-system-monitor
+Terminal=false
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

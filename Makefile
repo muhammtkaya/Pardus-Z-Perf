@@ -9,8 +9,13 @@
 #   make clean      -> derleme ciktilarini siler
 
 CC      ?= gcc
-CFLAGS  ?= -std=c11 -O2 -g -Wall -Wextra -Wpedantic -D_GNU_SOURCE
+CFLAGS  ?= -O2 -g -Wall -Wextra -Wpedantic
 LDFLAGS ?=
+# Kodun DERLENMESI icin zorunlu bayraklar: disaridan verilen CFLAGS (ornegin
+# dpkg-buildpackage'in sertlestirme bayraklari) bunlari EZMEMELI; aksi halde
+# accept4/struct ucred gibi GNU bildirimleri gorunmez ve derleme kirilir.
+ZP_CFLAGS := -std=c11 -D_GNU_SOURCE
+ALL_CFLAGS = $(ZP_CFLAGS) $(CPPFLAGS) $(CFLAGS)
 
 PREFIX  ?= /usr
 DESTDIR ?=
@@ -28,17 +33,17 @@ all: $(BIN)
 
 $(BIN): $(OBJS)
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
+	$(CC) $(ALL_CFLAGS) -o $@ $(OBJS) $(LDFLAGS)
 	@echo "Derlendi: $(BIN)"
 
 $(BUILD)/%.o: $(SRCDIR)/%.c
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -c -o $@ $<
+	$(CC) $(ALL_CFLAGS) -c -o $@ $<
 
 prober: $(PROBER)
 $(PROBER): tests/prober/interaction_prober.c
 	@mkdir -p $(BUILD)
-	$(CC) $(CFLAGS) -o $@ $< $(LDFLAGS)
+	$(CC) $(ALL_CFLAGS) -o $@ $< $(LDFLAGS)
 	@echo "Derlendi: $(PROBER)"
 
 run: all
@@ -51,6 +56,11 @@ install: all
 	install -D -m 0644 systemd/zperfd.service $(DESTDIR)/lib/systemd/system/zperfd.service
 	install -D -m 0644 polkit/org.pardus.zperf.policy \
 		$(DESTDIR)$(PREFIX)/share/polkit-1/actions/org.pardus.zperf.policy
+	# Masaustu: arayuz menu kaydi + ajanin oturum acilisinda otomatik baslatilmasi
+	install -D -m 0644 data/zperf-gui.desktop \
+		$(DESTDIR)$(PREFIX)/share/applications/zperf-gui.desktop
+	install -D -m 0644 data/zperf-agent.desktop \
+		$(DESTDIR)/etc/xdg/autostart/zperf-agent.desktop
 	# Profil dosyalari
 	install -d $(DESTDIR)/etc/zperf/profiles
 	install -m 0644 config/profiles/*.conf $(DESTDIR)/etc/zperf/profiles/
