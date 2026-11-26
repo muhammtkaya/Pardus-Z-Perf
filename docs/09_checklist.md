@@ -3,8 +3,8 @@
 Her akşam bu listeye bakılır. İşaretlenen her madde için kanıt (commit, test kimliği, dosya) yanına yazılır.
 
 ## 1. Başlangıç (26 Kasım)
-- [ ] Bu dokümanlar iki üye tarafından okundu; sorular not edildi
-- [ ] Git deposu oluşturuldu (GitHub, şimdilik özel); `.gitignore`, `LICENSE` (GPL-3.0), boş dizin yapısı (06-2)
+- [+] Bu dokümanlar iki üye tarafından okundu; sorular not edildi
+- [+] Git deposu oluşturuldu (GitHub, şimdilik özel); `.gitignore`, `LICENSE` (GPL-3.0), boş dizin yapısı (06-2)
 - [ ] Geliştirme paketleri kuruldu; `apt-cache policy` ile paket adları doğrulandı (R-13)
 - [ ] "temiz-kurulum" anlık görüntüsü var
 - [ ] TK-02 deneyi (06-7.1) yapıldı; B-08 ve B-11 dolduruldu; TK-02 kabul edildi veya alternatife geçildi
