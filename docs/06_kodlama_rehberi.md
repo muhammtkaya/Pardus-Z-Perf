@@ -14,10 +14,10 @@ sudo apt install -y build-essential pkg-config git libsystemd-dev libjson-c-dev 
 - Bildirim paketi yoksa bildirimler `notify-send` ile gösterilir.
 
 ## 2. Depo yapısı
-Git deposunun kökü, teslim zip'indeki `source_code/` klasörü olur.
+Kod `Real` dalındaki `source_code/` klasörüne yazılır; bu klasör teslim zip'ine olduğu gibi kopyalanır. `main` dalındaki eski kod kullanılmaz ve oradan dosya kopyalanmaz.
 
 ```
-zperf/
+source_code/
 ├── Makefile                 make, make test, make install, make deb, make clean
 ├── LICENSE                  GPL-3.0 tam metni
 ├── daemon/

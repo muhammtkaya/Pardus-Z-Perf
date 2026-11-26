@@ -26,11 +26,18 @@ Bu klasör, Aşama 1 önerisinin teslim edilen son hali (`Pardus_Z_Performans_Pr
 | 13 | [README taslağı](13_README_taslagi.md) | Paketleme bitince doldurulur; teslimdeki `README.md` olur | Melih |
 | 14 | [Yapay zekâ kullanım kaydı](14_yapay_zeka_kullanim_kaydi.md) | Her kullanımda bir satır; rapordaki zorunlu bölümün kaynağı | Ortak |
 
-Daha önce hazırlanan [Çalışma Rehberi](../Z_Performans_Calisma_Rehberi.pdf) terim sözlüğü ve elle yapılacak alıştırmalar için hâlâ geçerli.
+Daha önce hazırlanan Çalışma Rehberi (`Z_Performans_Calisma_Rehberi.pdf`, depoda değil, proje klasöründe) terim sözlüğü ve elle yapılacak alıştırmalar için hâlâ geçerli.
+
+## Depo ve dallar
+
+- **Depo:** https://github.com/muhammtkaya/Pardus-Z-Perf
+- **`Real` dalı:** Projenin yeni kodu bu dalda **sıfırdan** yazılır. Teslim edilecek her şey bu daldan çıkar.
+- **`main` dalı:** Önceki bir denemenin kodunu içerir. Bu kod **kullanılmaz** ve `main` dalına dokunulmaz. Teslim zip'i hazırlanırken yanlışlıkla `main`'den dosya alınmamalıdır.
+- **Dal yapısı:** `Real` dalının kökü teslim zip'inin yapısını izler: kod `source_code/` altında, bu dokümanlar `docs/` altında. Teslimde `docs/` zip'e konmaz.
 
 ## Bu dokümanlardaki varsayımlar
 
-1. **Kodun büyük kısmının henüz yazılmadığı varsayıldı.** Takvim 26 Kasım'dan başlıyor. Daha ilerideyseniz [İş planı](10_is_plani.md)'ndaki günleri kaydırın, kapsamı değil.
+1. **Kod sıfırdan yazılır.** `main`'deki eski kod kullanılmaz; takvim 26 Kasım'dan başlıyor ([İş planı](10_is_plani.md)).
 2. **Mousepad alıştırmasının (Çalışma Rehberi, Alıştırma 4) sonuçları henüz bilinmiyor.** [Riskler ve bulgular](08_riskler_ve_bulgular.md) içinde B-08 olarak "doldurulacak" bırakıldı. Mimarideki bir karar (TK-02) bu deneyin sonucuna bağlı; ilk gün yapılmalı.
 3. **Sürüm:** Öneride "Pardus 25.0" yazıyor; ön inceleme çıktılarında sanal makineler `VERSION_ID="25.2"` gösterdi. Teslim belgelerinde "Pardus 25 (25.2 üzerinde test edildi)" yazılmalı (bkz. B-09).
 
